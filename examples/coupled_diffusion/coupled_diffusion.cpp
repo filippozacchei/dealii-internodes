@@ -21,6 +21,7 @@
 
 #include <deal.II/grid/grid_generator.h>
 #include <deal.II/grid/grid_tools.h>
+#include <deal.II/grid/tria.h>
 
 #include <deal.II/numerics/vector_tools.h>
 
@@ -300,6 +301,17 @@ build_adjacent_boxes(MeshHandler                     &mesh,
 /// interface is geometrically non-conforming even though it is
 /// mathematically the same sphere -- this is the paper's Geometry-B case,
 /// and requires RBF interpolation (RBF radius > 0), not Lagrange.
+///
+/// The paper's actual Geometry-B meshes are *tetrahedral*, generated
+/// externally with Gmsh, not the hexahedral cells GridGenerator::
+/// half_hyper_shell produces directly. Lacking the original Gmsh files,
+/// this builds the hex half-shell on a temporary serial triangulation,
+/// converts it to a genuinely tetrahedral mesh via
+/// GridGenerator::convert_hypercube_to_simplex_mesh() (which preserves
+/// boundary ids across the conversion), and only then distributes it into
+/// the parallel::distributed::Triangulation MeshHandler owns -- so the
+/// *cell type* matches the paper even though the exact mesh (vertex
+/// positions, cell count) does not.
 void
 build_half_hyper_shells(MeshHandler        &mesh,
                         bool                is_master,
@@ -311,9 +323,15 @@ build_half_hyper_shells(MeshHandler        &mesh,
   const double r_min = is_master ? inner_radius : interface_radius;
   const double r_max = is_master ? interface_radius : outer_radius;
 
+  Triangulation<dim> hex_tria;
   GridGenerator::half_hyper_shell(
-    mesh.get(), Point<dim>(), r_min, r_max, /* n_cells = */ 0, /* colorize = */ true);
-  mesh.get().refine_global(refinement);
+    hex_tria, Point<dim>(), r_min, r_max, /* n_cells = */ 0, /* colorize = */ true);
+  hex_tria.refine_global(refinement);
+
+  Triangulation<dim> simplex_tria;
+  GridGenerator::convert_hypercube_to_simplex_mesh(hex_tria, simplex_tria);
+
+  mesh.get().copy_triangulation(simplex_tria);
 }
 
 // =========================================================================

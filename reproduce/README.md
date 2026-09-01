@@ -16,17 +16,25 @@ type** (Geometry-A / Geometry-B), and the **RL-RBF support radius**
 ($r = r_f h_2$, using the paper's own scaling factor $r_f$ and slave mesh
 size $h_2$) are taken directly from Table 4 and are exact.
 
-The **mesh subdivision counts** are not. All meshes in these tests are
-structured hexahedral, generated internally by `lifex`'s own mesh-handling
-utilities (not externally imported) -- but the exact per-direction
-subdivision counts that produce the reported $h_1$/$h_2$ and DoF counts
-aren't reconstructable from Table 4's summary statistics alone (domain
-extents, anisotropic refinement, etc. aren't fully specified there). The
-`Subdivisions master`/`Subdivisions slave` values below are placeholders:
-`dealii-internodes`' `build_adjacent_boxes()`/`build_half_hyper_shells()`
-use plain `GridGenerator` calls, so getting the exact reported DoF counts
-just means increasing these until you match them -- there's no missing
-external mesh file to track down, just subdivision tuning.
+The **exact meshes** are not, and the two geometries differ in kind, not
+just in degree of approximation:
+
+- **Geometry-A** (Tests 1-3): structured **hexahedral**, generated
+  internally by `lifex`'s own mesh-handling utilities. `build_adjacent_boxes()`
+  reproduces this with plain `GridGenerator` calls -- the cell type matches
+  exactly, but the exact per-direction subdivision counts that produce the
+  reported $h_1$/$h_2$ and DoF counts aren't reconstructable from Table 4's
+  summary statistics alone, so `Subdivisions master`/`Subdivisions slave`
+  below are placeholders to tune upward until you hit the target DoF count.
+- **Geometry-B** (Tests 4-5): **tetrahedral**, generated externally with
+  Gmsh -- a genuinely different cell type, needed for a well-shaped mesh on
+  curved geometry. We don't have the original Gmsh files, so
+  `build_half_hyper_shells()` instead builds a hexahedral half-shell with
+  `GridGenerator::half_hyper_shell()` and converts it to simplex cells via
+  `GridGenerator::convert_hypercube_to_simplex_mesh()`. This matches the
+  paper's *cell type* (tetrahedral, exercising the same `FE_SimplexP`/
+  `QGaussSimplex`/`MappingFE` code path `MeshHandler` uses for real Gmsh
+  imports) but not the exact mesh Gmsh would produce for the same geometry.
 
 ## Configurations
 
