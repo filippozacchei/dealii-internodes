@@ -151,7 +151,7 @@ namespace internodes
   InterfaceDoFHandler::setup_destination_points(
     const std::vector<Point<dim>> &points)
   {
-    TimerOutput::Scope timer_section(timer_output, "Setup destination points");
+    TimerOutput::Scope timer_section(timer_output(), "Setup destination points");
 
     destination_points_map.clear();
 

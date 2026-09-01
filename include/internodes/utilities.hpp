@@ -1,10 +1,12 @@
 #ifndef INTERNODES_UTILITIES_HPP
 #define INTERNODES_UTILITIES_HPP
 
+#include <deal.II/base/conditional_ostream.h>
 #include <deal.II/base/mpi.h>
 #include <deal.II/base/timer.h>
 
 #include <algorithm>
+#include <iostream>
 #include <map>
 #include <set>
 #include <utility>
@@ -21,11 +23,37 @@ namespace internodes
 
   /// Shared timer, printing a summary of wall-clock times for named scopes
   /// (TimerOutput::Scope) on program exit. Replaces lifex's global
-  /// `timer_output` object.
-  inline TimerOutput timer_output(mpi_comm,
-                                   std::cout,
-                                   TimerOutput::summary,
-                                   TimerOutput::wall_times);
+  /// `timer_output` object. Construct-on-first-use for the same MPI
+  /// initialization-order reason as pcout() below.
+  inline TimerOutput &
+  timer_output()
+  {
+    static TimerOutput instance(mpi_comm,
+                                 std::cout,
+                                 TimerOutput::summary,
+                                 TimerOutput::wall_times);
+    return instance;
+  }
+
+  /// Parallel-conditional output stream: only rank 0 actually prints,
+  /// avoiding duplicated output across MPI processes. Replaces lifex's
+  /// global `pcout` object.
+  ///
+  /// Implemented as a function returning a function-local static, rather
+  /// than a plain namespace-scope global, because its initializer calls
+  /// Utilities::MPI::this_mpi_process(), which requires MPI_Init() to have
+  /// already run. A namespace-scope `inline` variable would be constructed
+  /// at static-initialization time -- before main() and its
+  /// MPI_InitFinalize -- which is undefined behavior. A function-local
+  /// static is instead constructed on first call, which in practice only
+  /// ever happens from within main(), after MPI has been initialized.
+  inline ConditionalOStream &
+  pcout()
+  {
+    static ConditionalOStream instance(
+      std::cout, Utilities::MPI::this_mpi_process(mpi_comm) == 0);
+    return instance;
+  }
 
   /// @return whether @p value is contained in @p container.
   template <typename T>
