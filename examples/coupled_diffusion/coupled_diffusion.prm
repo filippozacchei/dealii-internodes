@@ -1,0 +1,50 @@
+# Default configuration: Geometry-A from the paper (Sect. 4.1) -- two
+# adjacent boxes forming Omega = (-2,2)x(-1,1)x(-1,1), split at x=0, with
+# Dirichlet data on the outer x-faces and Neumann elsewhere, matching the
+# paper's manufactured-solution accuracy check exactly, on a mesh coarse
+# enough to run interactively.
+#
+# To try discretization non-conformity: give "Subdivisions master" and
+# "Subdivisions slave" different values.
+#
+# To try Geometry-B (curved, geometrically non-conforming interface): set
+# Geometry/Type = half_hyper_shells and Discretization/RBF radius to
+# something > 0 (Lagrange interpolation does not apply to non-conforming
+# interfaces).
+
+subsection Geometry
+  set Type                   = adjacent_boxes
+  set Subdivisions master    = 8,4,4
+  set Subdivisions slave     = 8,4,4
+  set Inner radius           = 0.5
+  set Interface radius       = 0.75
+  set Outer radius           = 1.0
+  set Shell refinement master = 2
+  set Shell refinement slave  = 2
+end
+
+subsection Discretization
+  set Master degree = 1
+  set Slave degree  = 1
+  set RBF radius    = 0.0
+end
+
+subsection Boundary conditions
+  # Boundary ids for GridGenerator::subdivided_hyper_rectangle (colorized):
+  # 0/1 = -x/+x faces, 2/3 = -y/+y, 4/5 = -z/+z.
+  # Master's +x face (1) touches the slave's -x face (0): that's the
+  # interface. The paper puts Dirichlet data on the outer x-planes
+  # (master's -x = id 0, slave's +x = id 1) and Neumann everywhere else.
+  set Dirichlet ids master = 0
+  set Neumann ids master   = 2,3,4,5
+  set Interface id master  = 1
+
+  set Dirichlet ids slave = 1
+  set Neumann ids slave   = 2,3,4,5
+  set Interface id slave  = 0
+end
+
+subsection Solver
+  set GMRES tolerance      = 1e-8
+  set GMRES max iterations = 1000
+end
