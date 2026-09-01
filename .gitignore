@@ -1,0 +1,9 @@
+build/
+CMakeCache.txt
+CMakeFiles/
+*.o
+*.vtu
+*.pvtu
+*.pvd
+.vscode/
+.DS_Store
