@@ -1,0 +1,33 @@
+# Paper Table 4, Test 3: Geometry-A, p1=2, p2=4 (mixed order), RL-RBF, r_f=1.
+# radius = r_f * h_2 = 1 * 1.08e-1 = 0.108.
+# Reference DoF counts: ~1.69e7 (master), ~2.14e5 (slave); see caveat in
+# reproduce/README.md -- subdivisions here are a placeholder. Note the
+# master mesh (h1=2.70e-3) is ~40x finer than the slave (h2=1.08e-1) here,
+# i.e. this test is specifically about a large polynomial-degree AND
+# mesh-size mismatch across the interface.
+
+subsection Geometry
+  set Type                = adjacent_boxes
+  set Subdivisions master = 64,32,32
+  set Subdivisions slave  = 8,4,4
+end
+
+subsection Discretization
+  set Master degree = 2
+  set Slave degree  = 4
+  set RBF radius    = 0.108
+end
+
+subsection Boundary conditions
+  set Dirichlet ids master = 0
+  set Neumann ids master   = 2,3,4,5
+  set Interface id master  = 1
+  set Dirichlet ids slave = 1
+  set Neumann ids slave   = 2,3,4,5
+  set Interface id slave  = 0
+end
+
+subsection Solver
+  set GMRES tolerance      = 1e-8
+  set GMRES max iterations = 1000
+end

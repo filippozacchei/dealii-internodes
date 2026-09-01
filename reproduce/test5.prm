@@ -1,0 +1,36 @@
+# Paper Table 4, Test 5: Geometry-B, p1=p2=2, RL-RBF, r_f=10 (the "large
+# support radius" regime the paper identifies as the scalability bottleneck
+# -- see resolutionAlgorithm.tex/NumericalResults §4.3's discussion of
+# Step 2/Step 3 cost).
+# radius = r_f * h_2 = 10 * 2.87e-2 = 0.287.
+# Reference DoF counts: ~1.59e6 (master), ~2.02e5 (slave); see caveat in
+# reproduce/README.md -- shell refinement levels here are a placeholder.
+
+subsection Geometry
+  set Type                     = half_hyper_shells
+  set Inner radius             = 0.5
+  set Interface radius         = 0.75
+  set Outer radius             = 1.0
+  set Shell refinement master  = 3
+  set Shell refinement slave   = 3
+end
+
+subsection Discretization
+  set Master degree = 2
+  set Slave degree  = 2
+  set RBF radius    = 0.287
+end
+
+subsection Boundary conditions
+  set Dirichlet ids master = 0
+  set Neumann ids master   = 2
+  set Interface id master  = 1
+  set Dirichlet ids slave = 1
+  set Neumann ids slave   = 2
+  set Interface id slave  = 0
+end
+
+subsection Solver
+  set GMRES tolerance      = 1e-8
+  set GMRES max iterations = 1000
+end

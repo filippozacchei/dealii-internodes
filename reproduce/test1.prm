@@ -1,0 +1,31 @@
+# Paper Table 4, Test 1: Geometry-A, p1=p2=1, Lagrange interpolation.
+# Reference DoF counts: ~1.69e7 (master), ~2.14e5 (slave).
+# See reproduce/README.md: subdivisions below are a placeholder, not tuned
+# to hit those DoF counts -- increase them (or import an external mesh) to
+# get there; this file is exact on geometry/degree/interpolation only.
+
+subsection Geometry
+  set Type                = adjacent_boxes
+  set Subdivisions master = 64,32,32
+  set Subdivisions slave  = 32,16,16
+end
+
+subsection Discretization
+  set Master degree = 1
+  set Slave degree  = 1
+  set RBF radius    = 0.0
+end
+
+subsection Boundary conditions
+  set Dirichlet ids master = 0
+  set Neumann ids master   = 2,3,4,5
+  set Interface id master  = 1
+  set Dirichlet ids slave = 1
+  set Neumann ids slave   = 2,3,4,5
+  set Interface id slave  = 0
+end
+
+subsection Solver
+  set GMRES tolerance      = 1e-8
+  set GMRES max iterations = 1000
+end
