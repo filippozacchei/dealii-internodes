@@ -1,13 +1,16 @@
 # Paper Table 4, Test 1: Geometry-A, p1=p2=1, Lagrange interpolation.
-# Reference DoF counts: ~1.69e7 (master), ~2.14e5 (slave).
-# See reproduce/README.md: subdivisions below are a placeholder, not tuned
-# to hit those DoF counts -- increase them (or import an external mesh) to
-# get there; this file is exact on geometry/degree/interpolation only.
+# Meshes: a single coarse cube per subdomain, refined globally 8 (master) and
+# 7 (slave) times, i.e. 256^3 and 128^3 cells, so h_2 = 2 h_1. The levels are
+# those of the paper's scaling figures ("p1r8-p1r7"). DoFs: 257^3 = 1.70e7
+# (master, Table 4: 1.69e7) and 129^3 = 2.15e6 (slave; Table 4 lists 2.14e5,
+# which looks like a typo for 2.14e6). See reproduce/README.md.
 
 subsection Geometry
   set Type                = adjacent_boxes
-  set Subdivisions master = 64,32,32
-  set Subdivisions slave  = 32,16,16
+  set Subdivisions master = 1,1,1
+  set Subdivisions slave  = 1,1,1
+  set Global refinement master = 8
+  set Global refinement slave  = 7
 end
 
 subsection Discretization

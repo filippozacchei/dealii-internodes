@@ -65,7 +65,9 @@ cases:
 
 | Case | Parameters to set |
 |---|---|
-| Non-matching meshes across the interface | `Subdivisions master`, `Subdivisions slave` different (e.g. `8,4,4` vs `4,2,2`) and `RBF radius` > 0 (or `= 0` for Lagrange interpolation) |
+| Mesh resolution | `Subdivisions master/slave` (coarse mesh) and `Global refinement master/slave`: cells per direction = subdivisions × 2^refinement. The coarse mesh is refined on the distributed mesh, so large meshes are cheap to create |
+| Non-matching meshes across the interface | Different resulting resolutions on master and slave (e.g. `8,4,4` vs `4,2,2` cells) and an RBF radius (or `RBF radius = 0` for Lagrange interpolation) |
+| RBF support radius | `RBF radius` (absolute), or `RBF radius factor` r_f, which sets r = r_f · h_avg on each subdomain, h_avg being the average cell diameter of its own mesh (as in the paper) |
 | Different polynomial degrees | `Master degree`, `Slave degree` |
 | Geometry-B (curved shell interface, tetrahedra) | `Type = half_hyper_shells`, `RBF radius` > 0, `Shell refinement master/slave` |
 | Dirichlet / Neumann / interface assignment | `Dirichlet ids …`, `Neumann ids …`, `Interface id …` per subdomain, as lists of boundary ids |
@@ -92,7 +94,10 @@ Geometry-A, conforming interface (`RBF radius = 0`), broken $H^1$ error:
 | `16,8,8`   | 2.07294 | 2.06 | 0.0632763 | 3.98 |
 | `32,16,16` | 1.02826 | 2.02 |           |      |
 
-i.e. the optimal rates 1 and 2 under refinement.
+i.e. the optimal rates 1 and 2 under refinement. Meshes are listed as cells per
+direction of each subdomain; they are produced as a coarse mesh refined
+globally (e.g. `16,8,8` is `4,2,2` with 2 refinements) and give the same
+results as building the fine mesh directly.
 
 Geometry-A, geometrically matching but discretization-non-conforming
 interface (master mesh twice as fine as the slave's), $\mathbb{P}_1$:
@@ -140,7 +145,12 @@ last digit:
 - **Meshes.** `MeshHandler` distributes a serial `Triangulation` built by the
   user: hexahedral meshes with `parallel::distributed::Triangulation`
   (p4est), tetrahedral meshes with `parallel::fullydistributed::Triangulation`
-  (z-order partitioning, no METIS). Matching `FE_Q` / `FE_SimplexP`,
+  (z-order partitioning, no METIS). As in lifex, hexahedral meshes should be
+  passed as a *coarse* mesh and refined with `refine_global` on the
+  distributed triangulation (p4est treats every cell of the input as a tree,
+  so building the fine mesh serially does not scale). Simplex meshes cannot be
+  refined by deal.II: refine the hexahedral mesh before converting it, or read
+  a sufficiently fine mesh from file. Matching `FE_Q` / `FE_SimplexP`,
   quadratures and mappings are chosen from the cell type. For tetrahedral
   meshes the boundary ids are shifted by one internally, because a
   fully-distributed triangulation labels partition boundaries with the default

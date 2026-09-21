@@ -1,5 +1,5 @@
 # Paper Table 4, Test 4: Geometry-B, p1=p2=1, RL-RBF, r_f=1.
-# radius = r_f * h_2 = 1 * 2.23e-2 = 2.23e-2.
+# Radius r = r_f * h_avg of each subdomain's own mesh ("RBF radius factor").
 # Reference DoF counts: ~1.26e7 (master), ~1.59e6 (slave); see caveat in
 # reproduce/README.md -- shell refinement levels here are a placeholder.
 
@@ -15,7 +15,8 @@ end
 subsection Discretization
   set Master degree = 1
   set Slave degree  = 1
-  set RBF radius    = 2.23e-2
+  set RBF radius        = 0.0
+  set RBF radius factor = 1
 end
 
 subsection Boundary conditions

@@ -1,21 +1,24 @@
 # Paper Table 4, Test 3: Geometry-A, p1=2, p2=4 (mixed order), RL-RBF, r_f=1.
-# radius = r_f * h_2 = 1 * 1.08e-1 = 0.108.
-# Reference DoF counts: ~1.69e7 (master), ~2.14e5 (slave); see caveat in
-# reproduce/README.md -- subdivisions here are a placeholder. Note the
-# master mesh (h1=2.70e-3) is ~40x finer than the slave (h2=1.08e-1) here,
-# i.e. this test is specifically about a large polynomial-degree AND
-# mesh-size mismatch across the interface.
+# Radius r = r_f * h_avg of each subdomain's own mesh ("RBF radius factor").
+# Meshes: a single coarse cube per subdomain, refined 7 (master, P2) and 5
+# (slave, P4) times, as in the paper's scaling figures ("p2r7-p4r5"). DoFs:
+# 257^3 = 1.70e7 (master) and 129^3 = 2.15e6 (slave; Table 4 lists 2.14e5).
+# The master mesh is 4x finer than the slave's, with P2 against P4: a test
+# of a polynomial-degree AND mesh-size mismatch across the interface.
 
 subsection Geometry
   set Type                = adjacent_boxes
-  set Subdivisions master = 64,32,32
-  set Subdivisions slave  = 8,4,4
+  set Subdivisions master = 1,1,1
+  set Subdivisions slave  = 1,1,1
+  set Global refinement master = 7
+  set Global refinement slave  = 5
 end
 
 subsection Discretization
   set Master degree = 2
   set Slave degree  = 4
-  set RBF radius    = 0.108
+  set RBF radius        = 0.0
+  set RBF radius factor = 1
 end
 
 subsection Boundary conditions

@@ -1,18 +1,20 @@
 # Paper Table 4, Test 2: Geometry-A, p1=p2=1, RL-RBF interpolation, r_f=1.
-# radius = r_f * h_2 = 1 * 2.70e-3 = 2.70e-3.
-# Reference DoF counts: ~1.69e7 (master), ~2.14e5 (slave); see caveat in
-# reproduce/README.md -- subdivisions here are a placeholder.
+# Radius r = r_f * h_avg of each subdomain's own mesh ("RBF radius factor").
+# Meshes as in test1.prm (refinements 8 and 7): DoFs 257^3 and 129^3.
 
 subsection Geometry
   set Type                = adjacent_boxes
-  set Subdivisions master = 64,32,32
-  set Subdivisions slave  = 32,16,16
+  set Subdivisions master = 1,1,1
+  set Subdivisions slave  = 1,1,1
+  set Global refinement master = 8
+  set Global refinement slave  = 7
 end
 
 subsection Discretization
   set Master degree = 1
   set Slave degree  = 1
-  set RBF radius    = 2.70e-3
+  set RBF radius        = 0.0
+  set RBF radius factor = 1
 end
 
 subsection Boundary conditions

@@ -4,8 +4,11 @@
 # paper's manufactured-solution accuracy check exactly, on a mesh coarse
 # enough to run interactively.
 #
-# To try discretization non-conformity: give "Subdivisions master" and
-# "Subdivisions slave" different values.
+# The mesh of each box is a coarse mesh ("Subdivisions ...") refined
+# "Global refinement ..." times: cells per direction = subdivisions * 2^refinement.
+#
+# To try discretization non-conformity: make the resulting resolutions of
+# master and slave different (and set an RBF radius, see below).
 #
 # To try Geometry-B (curved, geometrically non-conforming interface): set
 # Geometry/Type = half_hyper_shells and Discretization/RBF radius to
@@ -16,6 +19,8 @@ subsection Geometry
   set Type                   = adjacent_boxes
   set Subdivisions master    = 8,4,4
   set Subdivisions slave     = 8,4,4
+  set Global refinement master = 0
+  set Global refinement slave  = 0
   set Inner radius           = 0.5
   set Interface radius       = 0.75
   set Outer radius           = 1.0
@@ -27,6 +32,8 @@ subsection Discretization
   set Master degree = 1
   set Slave degree  = 1
   set RBF radius    = 0.0
+  # Alternatively set r = factor * (average cell diameter of each subdomain):
+  set RBF radius factor = 0.0
 end
 
 subsection Boundary conditions

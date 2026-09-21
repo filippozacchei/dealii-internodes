@@ -19,13 +19,15 @@ size $h_2$) are taken directly from Table 4 and are exact.
 The **exact meshes** are not, and the two geometries differ in kind, not
 just in degree of approximation:
 
-- **Geometry-A** (Tests 1-3): structured **hexahedral**, generated
-  internally by `lifex`'s own mesh-handling utilities. `build_adjacent_boxes()`
-  reproduces this with plain `GridGenerator` calls -- the cell type matches
-  exactly, but the exact per-direction subdivision counts that produce the
-  reported $h_1$/$h_2$ and DoF counts aren't reconstructable from Table 4's
-  summary statistics alone, so `Subdivisions master`/`Subdivisions slave`
-  below are placeholders to tune upward until you hit the target DoF count.
+- **Geometry-A** (Tests 1-3): structured **hexahedral** cubes, built like
+  in `lifex`: a single coarse cube per subdomain, refined globally on the
+  distributed mesh (`Global refinement master/slave`). The refinement levels
+  are those in the file names of the paper's scaling figures (`p1r8-p1r7`,
+  `p2r7-p4r5`), and reproduce the master DoF counts of Table 4 exactly
+  ($257^3 = 1.70\cdot 10^7$). The slave counts come out as $129^3 = 2.15\cdot 10^6$,
+  whereas Table 4 lists $2.14\cdot 10^5$ -- probably a typo in the table.
+  The RBF radius is $r = r_f h_{avg}$ computed from each subdomain's own mesh
+  (`RBF radius factor`), so it does not depend on the geometry's scale.
 - **Geometry-B** (Tests 4-5): **tetrahedral**, generated externally with
   Gmsh -- a genuinely different cell type, needed for a well-shaped mesh on
   curved geometry. We don't have the original Gmsh files, so

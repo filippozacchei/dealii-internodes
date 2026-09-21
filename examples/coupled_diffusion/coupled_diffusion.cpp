@@ -107,8 +107,12 @@ struct Parameters
   // Omega = (-2,2) x (-1,1) x (-1,1), split at x=0 into Omega_1=(-2,0)x...
   // (master) and Omega_2=(0,2)x... (slave), matching the paper's Sect. 4.1
   // setup exactly.
+  // Coarse mesh of each box, refined globally afterwards (see
+  // MeshHandler::create()): cells per direction = subdivisions * 2^refinement.
   std::vector<unsigned int> subdivisions_master = {8, 4, 4};
   std::vector<unsigned int> subdivisions_slave  = {8, 4, 4};
+  unsigned int global_refinement_master = 0;
+  unsigned int global_refinement_slave  = 0;
 
   // -- half_hyper_shells --
   double inner_radius     = 0.5;
@@ -120,10 +124,15 @@ struct Parameters
   unsigned int master_degree = 1;
   unsigned int slave_degree  = 1;
 
-  /// RBF support radius for the slave's interface handler; 0 => Lagrange
-  /// interpolation (only valid/meaningful for geometrically conforming
-  /// interfaces, i.e. adjacent_boxes without a deliberate mismatch).
+  /// Absolute RBF support radius; 0 => Lagrange interpolation (only
+  /// valid/meaningful for geometrically conforming interfaces, i.e.
+  /// adjacent_boxes without a deliberate mismatch).
   double rbf_radius = 0.0;
+
+  /// If > 0, overrides rbf_radius: each subdomain's radius is
+  /// rbf_radius_factor * (average cell diameter of that subdomain's mesh),
+  /// i.e. r = r_f h as in the paper (and lifex's "RBF radius scaling factor").
+  double rbf_radius_factor = 0.0;
 
   std::set<types::boundary_id> dirichlet_ids_master;
   std::set<types::boundary_id> neumann_ids_master;
@@ -174,15 +183,27 @@ struct Parameters
       prm.declare_entry("Subdivisions master",
                         "8,4,4",
                         Patterns::List(Patterns::Integer(1), dim, dim, ","),
-                        "[adjacent_boxes only] Number of mesh subdivisions "
-                        "per direction on the master box (-2,0)x(-1,1)x(-1,1).");
+                        "[adjacent_boxes only] Number of subdivisions per "
+                        "direction of the *coarse* mesh of the master box "
+                        "(-2,0)x(-1,1)x(-1,1); it is then refined "
+                        "'Global refinement master' times.");
       prm.declare_entry("Subdivisions slave",
                         "8,4,4",
                         Patterns::List(Patterns::Integer(1), dim, dim, ","),
                         "[adjacent_boxes only] Same, for the slave box "
-                        "(0,2)x(-1,1)x(-1,1). Use different values from "
-                        "the master to get a discretization-non-conforming "
-                        "interface.");
+                        "(0,2)x(-1,1)x(-1,1). Use different resulting "
+                        "resolutions on master and slave to get a "
+                        "discretization-non-conforming interface.");
+      prm.declare_entry("Global refinement master",
+                        "0",
+                        Patterns::Integer(0),
+                        "[adjacent_boxes only] Uniform refinements applied "
+                        "to the distributed master mesh (cells per direction "
+                        "= subdivisions * 2^refinements).");
+      prm.declare_entry("Global refinement slave",
+                        "0",
+                        Patterns::Integer(0),
+                        "[adjacent_boxes only] Same, for the slave mesh.");
       prm.declare_entry("Inner radius", "0.5", Patterns::Double(0));
       prm.declare_entry("Interface radius", "0.75", Patterns::Double(0));
       prm.declare_entry("Outer radius", "1.0", Patterns::Double(0));
@@ -198,9 +219,16 @@ struct Parameters
       prm.declare_entry("RBF radius",
                         "0.0",
                         Patterns::Double(0),
-                        "0 selects Lagrange interpolation (geometrically "
-                        "conforming interfaces only); >0 selects RL-RBF "
-                        "interpolation with this support radius.");
+                        "Absolute support radius. 0 selects Lagrange "
+                        "interpolation (geometrically conforming interfaces "
+                        "only); >0 selects RL-RBF interpolation.");
+      prm.declare_entry("RBF radius factor",
+                        "0.0",
+                        Patterns::Double(0),
+                        "If >0, selects RL-RBF interpolation with a support "
+                        "radius r = factor * h_avg on each subdomain, h_avg "
+                        "being the average cell diameter of that subdomain's "
+                        "mesh (the paper's r = r_f h). Overrides 'RBF radius'.");
     }
     prm.leave_subsection();
 
@@ -237,6 +265,8 @@ struct Parameters
                    GeometryType::adjacent_boxes;
       subdivisions_master   = parse_subdivisions(prm.get("Subdivisions master"));
       subdivisions_slave    = parse_subdivisions(prm.get("Subdivisions slave"));
+      global_refinement_master = prm.get_integer("Global refinement master");
+      global_refinement_slave  = prm.get_integer("Global refinement slave");
       inner_radius          = prm.get_double("Inner radius");
       interface_radius      = prm.get_double("Interface radius");
       outer_radius          = prm.get_double("Outer radius");
@@ -250,6 +280,7 @@ struct Parameters
       master_degree = prm.get_integer("Master degree");
       slave_degree  = prm.get_integer("Slave degree");
       rbf_radius    = prm.get_double("RBF radius");
+      rbf_radius_factor = prm.get_double("RBF radius factor");
     }
     prm.leave_subsection();
 
@@ -282,17 +313,22 @@ struct Parameters
 /// 2/3 = -y/+y, 4/5 = -z/+z. The shared interface is the master's +x face
 /// (id 1) and the slave's -x face (id 0) -- hence the default "Interface
 /// id master = 1" / "Interface id slave = 0" above.
+///
+/// Like lifex, only a coarse mesh is built here (identically on every rank);
+/// MeshHandler::create() distributes it and refines it globally on the
+/// distributed triangulation, which is what scales to large meshes.
 void
 build_adjacent_boxes(MeshHandler                     &mesh,
                      bool                              is_master,
-                     const std::vector<unsigned int> &subdivisions)
+                     const std::vector<unsigned int> &subdivisions,
+                     const unsigned int                n_refinements)
 {
   const Point<dim> p1 = is_master ? Point<dim>(-2, -1, -1) : Point<dim>(0, -1, -1);
   const Point<dim> p2 = is_master ? Point<dim>(0, 1, 1) : Point<dim>(2, 1, 1);
   Triangulation<dim> serial_tria;
   GridGenerator::subdivided_hyper_rectangle(
     serial_tria, subdivisions, p1, p2, /* colorize = */ true);
-  mesh.create(serial_tria);
+  mesh.create(serial_tria, n_refinements);
 }
 
 /// Geometry-B: two half hyper-shells (annuli split by a plane through the
@@ -374,8 +410,14 @@ main(int argc, char *argv[])
 
       if (parameters.geometry == GeometryType::adjacent_boxes)
         {
-          build_adjacent_boxes(*mesh_master, true, parameters.subdivisions_master);
-          build_adjacent_boxes(*mesh_slave, false, parameters.subdivisions_slave);
+          build_adjacent_boxes(*mesh_master,
+                               true,
+                               parameters.subdivisions_master,
+                               parameters.global_refinement_master);
+          build_adjacent_boxes(*mesh_slave,
+                               false,
+                               parameters.subdivisions_slave,
+                               parameters.global_refinement_slave);
         }
       else
         {
@@ -413,13 +455,22 @@ main(int argc, char *argv[])
       // vmult() interpolates *from* the master's own handler *onto* the
       // slave's points (Q21) and vice versa via MultiDomainProblem's
       // interpolateResidual() (Q12) -- each side is a "source" for one
-      // transfer direction, so each needs its own RBF machinery, not just
-      // one of them. The original scales each side's radius off the
-      // *other* side's mesh diameter (see main.cpp's r_master/r_slave);
-      // simplified here to a single shared radius rather than replicating
-      // that per-side heuristic, since diameter-based auto-scaling isn't
-      // needed for a small illustrative example -- users who want it can
-      // set "RBF radius" relative to their own mesh spacing directly.
+      // transfer direction, so each needs its own RBF machinery. As in
+      // lifex, with "RBF radius factor" r_f each side's radius is r_f times
+      // the average cell diameter of *its own* mesh; otherwise the absolute
+      // "RBF radius" is used on both sides (0 => Lagrange interpolation).
+      const double radius_master = parameters.rbf_radius_factor > 0. ?
+                                     parameters.rbf_radius_factor *
+                                       mesh_master->diameter_avg() :
+                                     parameters.rbf_radius;
+      const double radius_slave = parameters.rbf_radius_factor > 0. ?
+                                    parameters.rbf_radius_factor *
+                                      mesh_slave->diameter_avg() :
+                                    parameters.rbf_radius;
+      if (radius_master > 0. || radius_slave > 0.)
+        pcout() << "RBF radii: master " << radius_master << ", slave "
+                << radius_slave << std::endl;
+
       pcout() << "Building master subproblem..." << std::endl;
       auto master = std::make_shared<SubProblemDiffusionReaction>(
         mesh_master,
@@ -429,7 +480,7 @@ main(int argc, char *argv[])
         forcing_term,
         boundary_tags_master,
         coefficients,
-        parameters.rbf_radius);
+        radius_master);
 
       pcout() << "Building slave subproblem..." << std::endl;
       auto slave = std::make_shared<SubProblemDiffusionReaction>(mesh_slave,
@@ -439,7 +490,7 @@ main(int argc, char *argv[])
                                                                  forcing_term,
                                                                  boundary_tags_slave,
                                                                  coefficients,
-                                                                 parameters.rbf_radius);
+                                                                 radius_slave);
 
       pcout() << "Coupling master and slave..." << std::endl;
       auto problem = std::make_shared<MultiDomainProblem>(master, slave);

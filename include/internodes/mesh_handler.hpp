@@ -64,22 +64,43 @@ namespace internodes
     /// identical on every rank -- across the MPI processes. Only meshes
     /// made entirely of hexahedra or entirely of tetrahedra are supported.
     ///
+    /// Hexahedral meshes: @p serial_tria should be a *coarse* mesh (e.g. a
+    /// single cube), which is then refined @p n_global_refinements times
+    /// on the distributed triangulation itself, as lifex does. This is what
+    /// scales: p4est treats every cell of @p serial_tria as a tree of its
+    /// forest, so handing it a fine mesh makes every rank build and store
+    /// the whole fine grid.
+    ///
+    /// Tetrahedral meshes: refinement of simplices is not available in
+    /// deal.II, so @p serial_tria is used as is (@p n_global_refinements must
+    /// be 0); refine before converting to simplices, or read a fine mesh
+    /// from file.
+    ///
     /// Boundary ids are preserved from the caller's point of view: the ids
     /// of the mesh passed in are the ids to use everywhere else in the
     /// library. (For tetrahedral meshes the ids stored internally are
     /// shifted by one; see to_internal_boundary_id().)
     void
-    create(const Triangulation<dim> &serial_tria)
+    create(const Triangulation<dim> &serial_tria,
+           const unsigned int        n_global_refinements = 0)
     {
       if (is_hex(serial_tria))
         {
           auto tria =
             std::make_unique<parallel::distributed::Triangulation<dim>>(comm);
           tria->copy_triangulation(serial_tria);
+          tria->refine_global(n_global_refinements);
           triangulation = std::move(tria);
         }
       else
         {
+          AssertThrow(n_global_refinements == 0,
+                      ExcMessage(
+                        "Global refinement of tetrahedral meshes is not "
+                        "supported by deal.II: refine the (hexahedral) mesh "
+                        "before converting it to simplices, or read a "
+                        "sufficiently fine mesh from file."));
+
           // p4est cannot hold simplices, so use a fully distributed
           // triangulation. Partition with the z-order partitioner, which
           // (unlike GridTools::partition_triangulation) does not need METIS.
@@ -131,6 +152,20 @@ namespace internodes
       for (const auto id : ids)
         result.insert(to_internal_boundary_id(id));
       return result;
+    }
+
+    /// Average diameter of the active cells, over all ranks (collective).
+    /// Used to scale the RBF support radius as r = r_f * h_avg, following
+    /// lifex's utils::MeshHandler::get_info().get_diameter_avg().
+    double
+    diameter_avg() const
+    {
+      double sum = 0.;
+      for (const auto &cell : get().active_cell_iterators())
+        if (cell->is_locally_owned())
+          sum += cell->diameter();
+      return Utilities::MPI::sum(sum, comm) /
+             static_cast<double>(get().n_global_active_cells());
     }
 
     /// @return the underlying triangulation. create() must have been
