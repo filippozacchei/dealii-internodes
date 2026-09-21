@@ -55,7 +55,10 @@ namespace internodes
     const unsigned int max_iters = 1000000;
     ReductionControl control(max_iters, tolerance, reduction, false, false);
     SolverCG<TrilinosWrappers::MPI::Vector> solver(control);
-    solver.solve(matrix, dst_global, rhs, preconditioner_problem);
+    {
+      TimerOutput::Scope timer_section(timer_output(), "  Schur preconditioner: apply");
+      solver.solve(matrix, dst_global, rhs, preconditioner_problem);
+    }
 
     for (unsigned int i = 0; i < owned_indices.size(); ++i)
       dst[owned_indices[i]] = dst_global[interface_indices[i]];

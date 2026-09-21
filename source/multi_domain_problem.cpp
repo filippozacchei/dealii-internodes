@@ -34,7 +34,10 @@ namespace internodes
     const unsigned int max_iters = 1000000;
     ReductionControl control(max_iters, tolerance, reduction, false, false);
     SolverCG<TrilinosWrappers::MPI::Vector> solver(control);
-    solver.solve(slave->M_gamma, residual_slave, src, precond);
+    {
+      TimerOutput::Scope timer_section(timer_output(), "  interpolateResidual: solve M_gamma");
+      solver.solve(slave->M_gamma, residual_slave, src, precond);
+    }
 
     slave->interface_dofHandler_ptr->interpolate(residual_master,
                                                   residual_slave,

@@ -159,10 +159,14 @@ namespace internodes
   {
     // Step 1: temp = Phi^{-1} * src (the source-side RBF coefficients gamma
     // in the paper's notation).
-    ReductionControl               control(100000, 1e-12, 1e-10);
-    SolverCG<TrilinosWrappers::MPI::Vector> solver(control);
-    solver.solve(Phi, temp, src, preconditioner_Phi);
-    temp_data = temp;
+    {
+      TimerOutput::Scope timer_section(timer_output(), "  interpolate: solve Phi");
+      ReductionControl   control(100000, 1e-12, 1e-10);
+      SolverCG<TrilinosWrappers::MPI::Vector> solver(control);
+      solver.solve(Phi, temp, src, preconditioner_Phi);
+      temp_data = temp;
+    }
+    TimerOutput::Scope timer_section(timer_output(), "  interpolate: evaluate at points");
 
     // Step 2: evaluate the rescaled interpolant at each destination point.
     // (Loop bound is points.size(), matching setup_destination_points();
