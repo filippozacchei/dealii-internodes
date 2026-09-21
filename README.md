@@ -121,8 +121,8 @@ interface (master mesh twice as fine as the slave's), $\mathbb{P}_1$:
 | Master / slave subdivisions | Lagrange: error (GMRES its) | RL-RBF: error (GMRES its) |
 |---|---|---|
 | `8,4,4` / `4,2,2`      | 9.42269 (7) | 9.42358 (6) |
-| `16,8,8` / `8,4,4`     | 4.24635 (7) | 4.24654 (7) |
-| `32,16,16` / `16,8,8`  | 2.05898 (7) | 2.05902 (7) |
+| `16,8,8` / `8,4,4`     | 4.24635 (7) | 4.24654 (6) |
+| `32,16,16` / `16,8,8`  | 2.05898 (6) | 2.05902 (6) |
 
 The RL-RBF support radii used were 2.0, 1.0 and 0.5 for the three rows, i.e.
 proportional to the interface mesh size. The Schur preconditioner reduces the interface iterations from 15 to 6 on the
@@ -135,8 +135,8 @@ Geometry-B (two half shells, tetrahedral, RL-RBF), $\mathbb{P}_1$:
 | Shell refinement master / slave | error | GMRES its |
 |---|---|---|
 | 1 / 1 | 0.812484 | 9  |
-| 2 / 2 | 0.421800 | 9  |
-| 2 / 1 (non-matching) | 0.845792 | 14 |
+| 2 / 2 | 0.421800 | 8  |
+| 2 / 1 (non-matching) | 0.845792 | 13 |
 
 ## Reproducing the paper's full results
 
@@ -177,6 +177,12 @@ last digit:
   mass matrix is well conditioned independently of the mesh, and this proved
   more robust than algebraic multigrid with a direct coarse solver on small
   parallel interface matrices.
+- **GMRES.** The interface GMRES uses the settings of lifex's
+  `LinearSolverHandler`, as in the original code: right preconditioning and
+  no restart (`GMRES right preconditioning`, `GMRES basis size`); deal.II's own
+  defaults are left preconditioning and a restart after 28 iterations. The
+  stopping criterion is an absolute tolerance on the residual norm and,
+  optionally, a reduction relative to the initial residual (`GMRES reduction`).
 - **Inner tolerances.** The subdomain solves use CG tolerances of
   $10^{-13}$ (absolute) / $10^{-11}$ (relative), as in the original code.
   These are much tighter than the outer GMRES tolerance ($10^{-8}$) and can

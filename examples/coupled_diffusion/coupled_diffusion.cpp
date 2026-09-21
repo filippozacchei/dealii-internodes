@@ -159,7 +159,15 @@ struct Parameters
   std::set<types::boundary_id> interface_id_slave;
 
   double gmres_tolerance    = 1e-8;
+  double gmres_reduction    = 0.;
+  bool gmres_right_preconditioning = true;
+  unsigned int gmres_basis_size    = 1000;
   unsigned int gmres_max_it = 1000;
+
+  /// [adjacent_boxes] Cell type of each subdomain: hexahedra, or tetrahedra
+  /// obtained by splitting the hexahedra of the same (refined) box.
+  bool tets_master = false;
+  bool tets_slave  = false;
   bool use_schur_preconditioner = true;
 
   /// "coupled": the INTERNODES solve of the two subdomains. "monolithic": a
@@ -221,6 +229,15 @@ struct Parameters
                         "(0,2)x(-1,1)x(-1,1). Use different resulting "
                         "resolutions on master and slave to get a "
                         "discretization-non-conforming interface.");
+      prm.declare_entry("Cell type master",
+                        "hex",
+                        Patterns::Selection("hex|tet"),
+                        "[adjacent_boxes only] hex, or tet: the refined "
+                        "hexahedral box split into tetrahedra.");
+      prm.declare_entry("Cell type slave",
+                        "hex",
+                        Patterns::Selection("hex|tet"),
+                        "[adjacent_boxes only] Same, for the slave.");
       prm.declare_entry("Global refinement master",
                         "0",
                         Patterns::Integer(0),
@@ -278,6 +295,22 @@ struct Parameters
     {
       prm.declare_entry("GMRES tolerance", "1e-8", Patterns::Double(0));
       prm.declare_entry("GMRES max iterations", "1000", Patterns::Integer(1));
+      prm.declare_entry("GMRES right preconditioning",
+                        "true",
+                        Patterns::Bool(),
+                        "Right (true, as in lifex) or left preconditioning.");
+      prm.declare_entry("GMRES basis size",
+                        "1000",
+                        Patterns::Integer(3),
+                        "Number of Krylov vectors kept before GMRES restarts "
+                        "(the default, as in lifex, effectively never restarts).");
+      prm.declare_entry("GMRES reduction",
+                        "0",
+                        Patterns::Double(0),
+                        "If >0, GMRES also stops when the residual has been "
+                        "reduced by this factor relative to the initial one "
+                        "(the tolerance above stays an absolute threshold; "
+                        "set it tiny to stop on the reduction only).");
       prm.declare_entry("Use Schur preconditioner",
                         "true",
                         Patterns::Bool(),
@@ -315,6 +348,8 @@ struct Parameters
                    GeometryType::adjacent_boxes;
       subdivisions_master   = parse_subdivisions(prm.get("Subdivisions master"));
       subdivisions_slave    = parse_subdivisions(prm.get("Subdivisions slave"));
+      tets_master = prm.get("Cell type master") == "tet";
+      tets_slave  = prm.get("Cell type slave") == "tet";
       global_refinement_master = prm.get_integer("Global refinement master");
       global_refinement_slave  = prm.get_integer("Global refinement slave");
       inner_radius          = prm.get_double("Inner radius");
@@ -349,6 +384,9 @@ struct Parameters
     {
       gmres_tolerance = prm.get_double("GMRES tolerance");
       gmres_max_it    = prm.get_integer("GMRES max iterations");
+      gmres_reduction = prm.get_double("GMRES reduction");
+      gmres_right_preconditioning = prm.get_bool("GMRES right preconditioning");
+      gmres_basis_size            = prm.get_integer("GMRES basis size");
       use_schur_preconditioner = prm.get_bool("Use Schur preconditioner");
     }
     prm.leave_subsection();
@@ -379,14 +417,26 @@ void
 build_adjacent_boxes(MeshHandler                     &mesh,
                      bool                              is_master,
                      const std::vector<unsigned int> &subdivisions,
-                     const unsigned int                n_refinements)
+                     const unsigned int                n_refinements,
+                     const bool                        tetrahedra = false)
 {
   const Point<dim> p1 = is_master ? Point<dim>(-2, -1, -1) : Point<dim>(0, -1, -1);
   const Point<dim> p2 = is_master ? Point<dim>(0, 1, 1) : Point<dim>(2, 1, 1);
   Triangulation<dim> serial_tria;
   GridGenerator::subdivided_hyper_rectangle(
     serial_tria, subdivisions, p1, p2, /* colorize = */ true);
-  mesh.create(serial_tria, n_refinements);
+  if (!tetrahedra)
+    {
+      mesh.create(serial_tria, n_refinements);
+      return;
+    }
+
+  // deal.II cannot refine simplices: refine the hexahedra, then split them
+  // into tetrahedra (boundary ids are preserved).
+  serial_tria.refine_global(n_refinements);
+  Triangulation<dim> simplex_tria;
+  GridGenerator::convert_hypercube_to_simplex_mesh(serial_tria, simplex_tria);
+  mesh.create(simplex_tria);
 }
 
 /// Geometry-B: two half hyper-shells (annuli split by a plane through the
@@ -765,11 +815,13 @@ main(int argc, char *argv[])
           build_adjacent_boxes(*mesh_master,
                                true,
                                parameters.subdivisions_master,
-                               parameters.global_refinement_master);
+                               parameters.global_refinement_master,
+                               parameters.tets_master);
           build_adjacent_boxes(*mesh_slave,
                                false,
                                parameters.subdivisions_slave,
-                               parameters.global_refinement_slave);
+                               parameters.global_refinement_slave,
+                               parameters.tets_slave);
         }
       else
         {
@@ -847,8 +899,14 @@ main(int argc, char *argv[])
       pcout() << "Coupling master and slave..." << std::endl;
       auto problem = std::make_shared<MultiDomainProblem>(master, slave);
 
-      SolverControl solver_control(parameters.gmres_max_it, parameters.gmres_tolerance);
-      InternodesSchurComplement solver(problem, solver_control);
+      ReductionControl solver_control(parameters.gmres_max_it,
+                                      parameters.gmres_tolerance,
+                                      parameters.gmres_reduction);
+      InternodesSchurComplement solver(
+        problem,
+        solver_control,
+        InternodesSchurComplement::GMRESData(parameters.gmres_basis_size,
+                                             parameters.gmres_right_preconditioning));
       solver.set_use_schur_preconditioner(parameters.use_schur_preconditioner);
 
       pcout() << "Solving..." << std::endl;

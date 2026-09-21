@@ -32,8 +32,16 @@ namespace internodes
   class InternodesSchurComplement : public Subscriptor
   {
   public:
+    /// GMRES options of the interface solve. The defaults are those of
+    /// lifex's LinearSolverHandler used by the original implementation: right
+    /// preconditioning and a basis of 1000 vectors, i.e. no restart in
+    /// practice (deal.II's own defaults are left preconditioning and a restart
+    /// after 28 iterations).
+    using GMRESData = SolverGMRES<TrilinosWrappers::MPI::Vector>::AdditionalData;
+
     InternodesSchurComplement(const std::shared_ptr<MultiDomainProblem> &pb,
-                              const SolverControl                        &solver_control)
+                              const ReductionControl                     &solver_control,
+                              const GMRESData &gmres_data = GMRESData(1000, true))
       : sol_omega_master(pb->master->interface_dofHandler_ptr->internal_dofs_owned())
       , sol_omega_slave(pb->slave->interface_dofHandler_ptr->internal_dofs_owned())
       , lambda_master(pb->master->interface_dofHandler_ptr->interface_dofs_owned())
@@ -44,7 +52,7 @@ namespace internodes
       , res_slave_internal(pb->slave->interface_dofHandler_ptr->internal_dofs_owned())
       , problem(pb)
       , solver_control(solver_control)
-      , linear_solver(this->solver_control)
+      , linear_solver(this->solver_control, gmres_data)
     {}
 
     const TrilinosWrappers::MPI::Vector &
@@ -186,7 +194,10 @@ namespace internodes
 
     std::shared_ptr<MultiDomainProblem> problem;
 
-    SolverControl                            solver_control;
+    /// Absolute tolerance on the residual norm and, if its reduction is > 0,
+    /// also a reduction relative to the initial residual (as in lifex's
+    /// LinearSolverHandler).
+    ReductionControl                         solver_control;
     SolverGMRES<TrilinosWrappers::MPI::Vector> linear_solver;
     bool                                     use_preconditioner = true;
   };

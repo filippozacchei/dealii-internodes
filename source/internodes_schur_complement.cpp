@@ -145,7 +145,10 @@ namespace internodes
 
     TrilinosWrappers::MPI::Vector lambda_(
       problem->master->interface_dofHandler_ptr->interface_dofs_owned());
-    step3(lambda_, chi);
+    {
+      TimerOutput::Scope timer_section(timer_output(), "Step 3: interface solve (total)");
+      step3(lambda_, chi);
+    }
     this->set_lambda(lambda_);
 
     pcout() << "Step 4: solving for u^(lambda)" << std::endl;

@@ -29,6 +29,7 @@ subsection Boundary conditions
 end
 
 subsection Solver
-  set GMRES tolerance      = 1e-8
+  set GMRES tolerance      = 1e-14
+  set GMRES reduction      = 1e-8
   set GMRES max iterations = 1000
 end
