@@ -35,11 +35,10 @@ namespace internodes
     , Neumann_id_(neumann_id)
     , Dirichlet_id_(dirichlet_id)
   {
-    std::map<types::global_dof_index, Point<dim>> support_points_dof_handler;
-    DoFTools::map_dofs_to_support_points(*(this->mapping()),
-                                          *dof_handler_,
-                                          support_points_dof_handler,
-                                          ComponentMask());
+    const std::map<types::global_dof_index, Point<dim>> support_points_dof_handler =
+      DoFTools::map_dofs_to_support_points(*(this->mapping()),
+                                            *dof_handler_,
+                                            ComponentMask());
 
     owned_dofs_ = dof_handler->locally_owned_dofs();
     relevant_dofs_ = DoFTools::extract_locally_relevant_dofs(*dof_handler_);
@@ -123,7 +122,7 @@ namespace internodes
     {
       std::size_t i = 0;
       for (const types::global_dof_index g : interface_dofs_)
-        support_points_[i++] = support_points_dof_handler[g];
+        support_points_[i++] = support_points_dof_handler.at(g);
     }
 
     support_points_total = Utilities::MPI::all_gather(mpi_comm, support_points_);
