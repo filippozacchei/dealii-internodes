@@ -17,7 +17,22 @@
 #include <deal.II/base/parameter_handler.h>
 #include <deal.II/base/patterns.h>
 #include <deal.II/base/point.h>
+#include <deal.II/base/quadrature_lib.h>
+#include <deal.II/base/timer.h>
 #include <deal.II/base/utilities.h>
+
+#include <deal.II/dofs/dof_handler.h>
+#include <deal.II/dofs/dof_tools.h>
+
+#include <deal.II/fe/fe_values.h>
+
+#include <deal.II/lac/affine_constraints.h>
+#include <deal.II/lac/dynamic_sparsity_pattern.h>
+#include <deal.II/lac/solver_cg.h>
+#include <deal.II/lac/sparsity_tools.h>
+#include <deal.II/lac/trilinos_precondition.h>
+#include <deal.II/lac/trilinos_sparse_matrix.h>
+#include <deal.II/lac/trilinos_vector.h>
 
 #include <deal.II/grid/grid_generator.h>
 #include <deal.II/grid/grid_tools.h>
@@ -30,8 +45,10 @@
 #include "internodes/sub_problem_diffusion_reaction.hpp"
 #include "internodes/utilities.hpp"
 
+#include <array>
 #include <cmath>
 #include <fstream>
+#include <sstream>
 #include <map>
 #include <memory>
 #include <set>
@@ -143,6 +160,16 @@ struct Parameters
 
   double gmres_tolerance    = 1e-8;
   unsigned int gmres_max_it = 1000;
+  bool use_schur_preconditioner = true;
+
+  /// "coupled": the INTERNODES solve of the two subdomains. "monolithic": a
+  /// single-domain reference solve on the union of the two boxes (adjacent_
+  /// boxes only), at the master's resolution.
+  bool monolithic = false;
+
+  /// If not empty, a JSON file with sizes, errors, iterations and per-phase
+  /// timings is written here (by rank 0).
+  std::string results_file;
 
   static std::set<types::boundary_id>
   parse_ids(const std::string &s)
@@ -251,6 +278,29 @@ struct Parameters
     {
       prm.declare_entry("GMRES tolerance", "1e-8", Patterns::Double(0));
       prm.declare_entry("GMRES max iterations", "1000", Patterns::Integer(1));
+      prm.declare_entry("Use Schur preconditioner",
+                        "true",
+                        Patterns::Bool(),
+                        "Use the Dirichlet-Neumann-type preconditioner in "
+                        "the interface GMRES solve; false gives the "
+                        "unpreconditioned iteration counts.");
+    }
+    prm.leave_subsection();
+
+    prm.enter_subsection("Run");
+    {
+      prm.declare_entry("Mode",
+                        "coupled",
+                        Patterns::Selection("coupled|monolithic"),
+                        "coupled: INTERNODES on two subdomains. monolithic: "
+                        "single-domain reference solve on the union of the "
+                        "two boxes at the master's resolution (adjacent_boxes "
+                        "with the default colorized boundary ids only).");
+      prm.declare_entry("Results file",
+                        "",
+                        Patterns::Anything(),
+                        "If not empty, a JSON file with sizes, errors, "
+                        "iteration counts and per-phase timings.");
     }
     prm.leave_subsection();
   }
@@ -299,6 +349,14 @@ struct Parameters
     {
       gmres_tolerance = prm.get_double("GMRES tolerance");
       gmres_max_it    = prm.get_integer("GMRES max iterations");
+      use_schur_preconditioner = prm.get_bool("Use Schur preconditioner");
+    }
+    prm.leave_subsection();
+
+    prm.enter_subsection("Run");
+    {
+      monolithic   = prm.get("Mode") == "monolithic";
+      results_file = prm.get("Results file");
     }
     prm.leave_subsection();
   }
@@ -384,6 +442,289 @@ build_half_hyper_shells(MeshHandler        &mesh,
 }
 
 // =========================================================================
+// Reports (JSON) and single-domain reference solve
+// =========================================================================
+
+/// Sizes and error of one subdomain (or of the single-domain reference).
+struct SubdomainReport
+{
+  unsigned int             degree           = 0;
+  types::global_dof_index  n_dofs           = 0;
+  types::global_dof_index  n_interface_dofs = 0;
+  types::global_cell_index n_cells          = 0;
+  double                   h_avg            = 0.;
+  double                   rbf_radius       = 0.;
+  double                   error            = 0.;
+};
+
+std::string
+json_escape(const std::string &s)
+{
+  std::string out;
+  for (const char c : s)
+    {
+      if (c == '"' || c == '\\')
+        out += '\\';
+      out += c;
+    }
+  return out;
+}
+
+/// Per-phase timings as a JSON object {name: {"wall_max": s, "calls": n}}.
+/// The wall time is the maximum over the MPI ranks, which is what a strong
+/// scaling study reports. Collective.
+std::string
+timings_json()
+{
+  const auto wall =
+    timer_output().get_summary_data(TimerOutput::OutputData::total_wall_time);
+  const auto calls =
+    timer_output().get_summary_data(TimerOutput::OutputData::n_calls);
+
+  std::vector<double> values;
+  for (const auto &entry : wall)
+    values.push_back(entry.second);
+
+  // All ranks execute the same (collective) timer scopes, so the sections
+  // agree; fall back to rank 0's own numbers if they somehow do not.
+  const unsigned int n = values.size();
+  if (Utilities::MPI::min(n, mpi_comm) == Utilities::MPI::max(n, mpi_comm))
+    {
+      std::vector<double> maxima(n);
+      MPI_Allreduce(values.data(), maxima.data(), n, MPI_DOUBLE, MPI_MAX, mpi_comm);
+      values = maxima;
+    }
+
+  std::ostringstream out;
+  out.precision(9);
+  out << "{";
+  unsigned int i = 0;
+  for (const auto &entry : wall)
+    {
+      std::string name = entry.first;
+      name.erase(0, name.find_first_not_of(' '));
+      out << (i ? ", " : "") << "\n    \"" << json_escape(name)
+          << "\": {\"wall_max\": " << values[i]
+          << ", \"calls\": " << calls.at(entry.first) << "}";
+      ++i;
+    }
+  out << "\n  }";
+  return out.str();
+}
+
+void
+write_results(const Parameters                                              &parameters,
+              const std::vector<std::pair<std::string, SubdomainReport>>    &subdomains,
+              const double                                                   total_error,
+              const int                                                      n_iterations)
+{
+  if (parameters.results_file.empty())
+    return;
+
+  const std::string timings = timings_json(); // collective: call on all ranks
+  if (Utilities::MPI::this_mpi_process(mpi_comm) != 0)
+    return;
+
+  std::ofstream out(parameters.results_file);
+  AssertThrow(out, ExcMessage("Cannot write results file " + parameters.results_file));
+  out.precision(12);
+  out << "{\n";
+  out << "  \"mode\": \"" << (parameters.monolithic ? "monolithic" : "coupled") << "\",\n";
+  out << "  \"geometry\": \""
+      << (parameters.geometry == GeometryType::adjacent_boxes ? "adjacent_boxes" :
+                                                                 "half_hyper_shells")
+      << "\",\n";
+  out << "  \"n_mpi_ranks\": " << Utilities::MPI::n_mpi_processes(mpi_comm) << ",\n";
+  out << "  \"interpolation\": \""
+      << ((parameters.rbf_radius > 0. || parameters.rbf_radius_factor > 0.) ? "rbf" :
+                                                                              "lagrange")
+      << "\",\n";
+  out << "  \"rbf_radius_factor\": " << parameters.rbf_radius_factor << ",\n";
+  out << "  \"schur_preconditioner\": "
+      << (parameters.use_schur_preconditioner ? "true" : "false") << ",\n";
+  out << "  \"gmres_iterations\": " << n_iterations << ",\n";
+  out << "  \"broken_H1_error\": " << total_error << ",\n";
+  out << "  \"subdomains\": {";
+  unsigned int i = 0;
+  for (const auto &[name, r] : subdomains)
+    {
+      out << (i++ ? "," : "") << "\n    \"" << name << "\": {"
+          << "\"degree\": " << r.degree << ", \"n_dofs\": " << r.n_dofs
+          << ", \"n_interface_dofs\": " << r.n_interface_dofs
+          << ", \"n_cells\": " << r.n_cells << ", \"h_avg\": " << r.h_avg
+          << ", \"rbf_radius\": " << r.rbf_radius << ", \"H1_error\": " << r.error
+          << "}";
+    }
+  out << "\n  },\n";
+  out << "  \"timings\": " << timings << "\n}\n";
+}
+
+/// Broken/plain H1 error of a DoFHandler-indexed (ghosted) solution against
+/// the exact solution, using the cell-type-aware mapping/quadrature of @p mesh.
+double
+h1_error(const MeshHandler                     &mesh,
+         const DoFHandler<dim>                 &dof_handler,
+         const TrilinosWrappers::MPI::Vector   &ghosted_solution,
+         const unsigned int                     degree)
+{
+  const auto mapping    = mesh.get_linear_mapping();
+  const auto quadrature = mesh.get_quadrature_gauss(degree + 2);
+
+  Vector<double> difference_per_cell(mesh.get().n_active_cells());
+  VectorTools::integrate_difference(*mapping,
+                                    dof_handler,
+                                    ghosted_solution,
+                                    ExactSolution(),
+                                    difference_per_cell,
+                                    *quadrature,
+                                    VectorTools::H1_norm);
+  return VectorTools::compute_global_error(mesh.get(),
+                                           difference_per_cell,
+                                           VectorTools::H1_norm);
+}
+
+/// Single-domain reference solve of the same problem on the union of the two
+/// boxes, (-2,2)x(-1,1)x(-1,1), at the master's resolution (so, for a
+/// conforming coupled run, on exactly the same mesh). Dirichlet/Neumann ids
+/// are the unions of the master's and slave's, i.e. deal.II's colorized ids
+/// with the paper's default assignment. Plain CG with algebraic multigrid.
+SubdomainReport
+run_monolithic(const Parameters &parameters, unsigned int &n_cg_iterations)
+{
+  MeshHandler mesh;
+  {
+    Triangulation<dim>        coarse;
+    std::vector<unsigned int> subdivisions = parameters.subdivisions_master;
+    subdivisions[0] *= 2; // two boxes side by side along x
+    GridGenerator::subdivided_hyper_rectangle(
+      coarse, subdivisions, Point<dim>(-2, -1, -1), Point<dim>(2, 1, 1), true);
+    mesh.create(coarse, parameters.global_refinement_master);
+  }
+
+  std::set<types::boundary_id> dirichlet_ids = parameters.dirichlet_ids_master;
+  dirichlet_ids.insert(parameters.dirichlet_ids_slave.begin(),
+                       parameters.dirichlet_ids_slave.end());
+  std::set<types::boundary_id> neumann_ids = parameters.neumann_ids_master;
+  neumann_ids.insert(parameters.neumann_ids_slave.begin(),
+                     parameters.neumann_ids_slave.end());
+
+  const unsigned int degree = parameters.master_degree;
+  const auto         fe     = mesh.get_fe_lagrange(degree);
+  const auto         mapping = mesh.get_linear_mapping();
+  const QGauss<dim>     quadrature(degree + 1);
+  const QGauss<dim - 1> face_quadrature(degree + 1);
+
+  DoFHandler<dim> dof_handler(mesh.get());
+  dof_handler.distribute_dofs(*fe);
+  const IndexSet owned    = dof_handler.locally_owned_dofs();
+  const IndexSet relevant = DoFTools::extract_locally_relevant_dofs(dof_handler);
+
+  AffineConstraints<double> constraints;
+  constraints.reinit(owned, relevant);
+  for (const auto id : dirichlet_ids)
+    VectorTools::interpolate_boundary_values(dof_handler, id, ExactSolution(), constraints);
+  constraints.close();
+
+  TrilinosWrappers::SparseMatrix matrix;
+  TrilinosWrappers::MPI::Vector  rhs(owned, mpi_comm);
+  {
+    TimerOutput::Scope timer_section(timer_output(), "monolithic: assembly");
+
+    DynamicSparsityPattern dsp(relevant);
+    DoFTools::make_sparsity_pattern(dof_handler, dsp, constraints, false);
+    SparsityTools::distribute_sparsity_pattern(dsp, owned, mpi_comm, relevant);
+    matrix.reinit(owned, owned, dsp, mpi_comm);
+
+    FEValues<dim>     fe_values(*mapping,
+                            *fe,
+                            quadrature,
+                            update_values | update_gradients |
+                              update_quadrature_points | update_JxW_values);
+    FEFaceValues<dim> fe_face_values(*mapping,
+                                     *fe,
+                                     face_quadrature,
+                                     update_values | update_quadrature_points |
+                                       update_normal_vectors | update_JxW_values);
+
+    const unsigned int                   dofs_per_cell = fe->n_dofs_per_cell();
+    FullMatrix<double>                   cell_matrix(dofs_per_cell, dofs_per_cell);
+    Vector<double>                       cell_rhs(dofs_per_cell);
+    std::vector<types::global_dof_index> dof_indices(dofs_per_cell);
+    const Forcing                        forcing;
+    const NeumannData                    neumann;
+
+    for (const auto &cell : dof_handler.active_cell_iterators())
+      if (cell->is_locally_owned())
+        {
+          fe_values.reinit(cell);
+          cell_matrix = 0.;
+          cell_rhs    = 0.;
+
+          for (unsigned int q = 0; q < quadrature.size(); ++q)
+            for (unsigned int i = 0; i < dofs_per_cell; ++i)
+              {
+                for (unsigned int j = 0; j < dofs_per_cell; ++j)
+                  cell_matrix(i, j) += (fe_values.shape_grad(i, q) *
+                                          fe_values.shape_grad(j, q) +
+                                        fe_values.shape_value(i, q) *
+                                          fe_values.shape_value(j, q)) *
+                                       fe_values.JxW(q);
+                cell_rhs(i) += forcing.value(fe_values.quadrature_point(q)) *
+                               fe_values.shape_value(i, q) * fe_values.JxW(q);
+              }
+
+          for (const auto &face : cell->face_iterators())
+            if (face->at_boundary() && neumann_ids.count(face->boundary_id()))
+              {
+                fe_face_values.reinit(cell, face);
+                for (unsigned int q = 0; q < face_quadrature.size(); ++q)
+                  {
+                    const double g =
+                      neumann.gradient(fe_face_values.quadrature_point(q)) *
+                      fe_face_values.normal_vector(q);
+                    for (unsigned int i = 0; i < dofs_per_cell; ++i)
+                      cell_rhs(i) += g * fe_face_values.shape_value(i, q) *
+                                     fe_face_values.JxW(q);
+                  }
+              }
+
+          cell->get_dof_indices(dof_indices);
+          constraints.distribute_local_to_global(
+            cell_matrix, cell_rhs, dof_indices, matrix, rhs);
+        }
+    matrix.compress(VectorOperation::add);
+    rhs.compress(VectorOperation::add);
+  }
+
+  TrilinosWrappers::MPI::Vector solution(owned, mpi_comm);
+  {
+    TimerOutput::Scope timer_section(timer_output(), "monolithic: solve");
+
+    TrilinosWrappers::PreconditionAMG::AdditionalData amg_data;
+    amg_data.higher_order_elements = degree > 1;
+    TrilinosWrappers::PreconditionAMG preconditioner;
+    preconditioner.initialize(matrix, amg_data);
+
+    SolverControl control(20000, 1e-12 * rhs.l2_norm());
+    SolverCG<TrilinosWrappers::MPI::Vector> cg(control);
+    cg.solve(matrix, solution, rhs, preconditioner);
+    n_cg_iterations = control.last_step();
+    constraints.distribute(solution);
+  }
+
+  TrilinosWrappers::MPI::Vector ghosted(owned, relevant, mpi_comm);
+  ghosted = solution;
+
+  SubdomainReport report;
+  report.degree  = degree;
+  report.n_dofs  = dof_handler.n_dofs();
+  report.n_cells = mesh.get().n_global_active_cells();
+  report.h_avg   = mesh.diameter_avg();
+  report.error   = h1_error(mesh, dof_handler, ghosted, degree);
+  return report;
+}
+
+// =========================================================================
 // main
 // =========================================================================
 
@@ -404,6 +745,17 @@ main(int argc, char *argv[])
 
       pcout() << "=== dealii-internodes: coupled_diffusion example ===" << std::endl;
       pcout() << "Parameter file: " << prm_file << std::endl;
+
+      if (parameters.monolithic)
+        {
+          pcout() << "Mode: monolithic single-domain reference solve" << std::endl;
+          unsigned int n_cg_iterations = 0;
+          const SubdomainReport report = run_monolithic(parameters, n_cg_iterations);
+          pcout() << "CG converged in " << n_cg_iterations << " iterations." << std::endl;
+          pcout() << "H1 error vs. exact solution: " << report.error << std::endl;
+          write_results(parameters, {{"monolithic", report}}, report.error, n_cg_iterations);
+          return 0;
+        }
 
       auto mesh_master = std::make_shared<MeshHandler>();
       auto mesh_slave  = std::make_shared<MeshHandler>();
@@ -497,9 +849,13 @@ main(int argc, char *argv[])
 
       SolverControl solver_control(parameters.gmres_max_it, parameters.gmres_tolerance);
       InternodesSchurComplement solver(problem, solver_control);
+      solver.set_use_schur_preconditioner(parameters.use_schur_preconditioner);
 
       pcout() << "Solving..." << std::endl;
-      solver.solve();
+      {
+        TimerOutput::Scope timer_section(timer_output(), "driver: solve()");
+        solver.solve();
+      }
       pcout() << "GMRES converged in " << solver.get_n_iterations() << " iterations."
                << std::endl;
 
@@ -543,33 +899,37 @@ main(int argc, char *argv[])
       const TrilinosWrappers::MPI::Vector solution_slave =
         reconstruct_full_solution(*slave, solver.sol_slave(), solver.lambda_slave_());
 
-      double error_squared = 0.0;
-      for (const auto &[sub, sol, degree] :
-           {std::tuple{master.get(), &solution_master, parameters.master_degree},
-            std::tuple{slave.get(), &solution_slave, parameters.slave_degree}})
+      std::vector<std::pair<std::string, SubdomainReport>> reports;
+      double                                               error_squared = 0.0;
+      for (const auto &[name, sub, sol, degree, radius] :
+           {std::tuple{std::string("master"),
+                       master.get(),
+                       &solution_master,
+                       parameters.master_degree,
+                       radius_master},
+            std::tuple{std::string("slave"),
+                       slave.get(),
+                       &solution_slave,
+                       parameters.slave_degree,
+                       radius_slave}})
         {
-          // Cell-type-aware mapping/quadrature (hex vs. tet), from the same
-          // MeshHandler the solver itself used.
-          const auto mapping    = sub->slice->get_linear_mapping();
-          const auto quadrature = sub->slice->get_quadrature_gauss(degree + 2);
-
-          Vector<double> difference_per_cell(sub->slice->get().n_active_cells());
-          VectorTools::integrate_difference(*mapping,
-                                            *sub->dof_handler,
-                                            *sol,
-                                            ExactSolution(),
-                                            difference_per_cell,
-                                            *quadrature,
-                                            VectorTools::H1_norm);
-          const double local_error =
-            VectorTools::compute_global_error(sub->slice->get(),
-                                              difference_per_cell,
-                                              VectorTools::H1_norm);
-          error_squared += local_error * local_error;
+          SubdomainReport report;
+          report.degree           = degree;
+          report.n_dofs           = sub->dof_handler->n_dofs();
+          report.n_interface_dofs =
+            sub->interface_dofHandler_ptr->interface_dofs_global().n_elements();
+          report.n_cells    = sub->slice->get().n_global_active_cells();
+          report.h_avg      = sub->slice->diameter_avg();
+          report.rbf_radius = radius;
+          report.error      = h1_error(*sub->slice, *sub->dof_handler, *sol, degree);
+          error_squared += report.error * report.error;
+          reports.emplace_back(name, report);
         }
 
-      pcout() << "Broken H1 error vs. exact solution: " << std::sqrt(error_squared)
-               << std::endl;
+      const double total_error = std::sqrt(error_squared);
+      pcout() << "Broken H1 error vs. exact solution: " << total_error << std::endl;
+
+      write_results(parameters, reports, total_error, solver.get_n_iterations());
     }
   catch (const std::exception &exc)
     {

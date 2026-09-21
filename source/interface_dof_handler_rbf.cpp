@@ -25,6 +25,8 @@ namespace internodes
     , mode(mode_)
     , rtree(std::make_shared<RTreeHandler>(support_points_global_, radius_))
   {
+    TimerOutput::Scope timer_section(timer_output(),
+                                     "setup: RBF operators (Phi, AMG, scaling)");
     rhs.reinit(this->interface_dofs_owned().size());
     temp_data.reinit(this->interface_dofs_owned().size());
     temp.reinit(this->interface_dofs_owned());
@@ -123,6 +125,8 @@ namespace internodes
   InterfaceDoFHandlerRBF::setup_destination_points(
     const std::vector<Point<dim>> &points)
   {
+    TimerOutput::Scope timer_section(timer_output(), "Setup destination points");
+
     // Neighbor queries against the (globally gathered) rtree don't depend
     // on which rank owns which geometry, so the destination point list is
     // simply load-balanced by splitting it into contiguous chunks across

@@ -85,6 +85,15 @@ namespace internodes
       return solver_control.last_step();
     }
 
+    /// Enables (default) or disables the Dirichlet-Neumann Schur
+    /// preconditioner in the interface GMRES solve. Disabling it (identity
+    /// preconditioner) only serves to measure what the preconditioner buys.
+    void
+    set_use_schur_preconditioner(const bool use)
+    {
+      use_preconditioner = use;
+    }
+
     /// Matrix-free application of the Schur complement operator $S$ (paper
     /// Algorithm 5): $S\mathbf p_{\overline\Gamma_1} \to \mathbf r$.
     void
@@ -179,6 +188,7 @@ namespace internodes
 
     SolverControl                            solver_control;
     SolverGMRES<TrilinosWrappers::MPI::Vector> linear_solver;
+    bool                                     use_preconditioner = true;
   };
 } // namespace internodes
 

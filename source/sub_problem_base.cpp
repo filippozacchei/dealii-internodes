@@ -16,6 +16,8 @@ namespace internodes
   void
   SubProblemBase::setupSystem(double radius, InterfaceDoFHandlerRBF::Mode mode)
   {
+    TimerOutput::Scope setup_timer(timer_output(),
+                                   "setup: subproblem (DoFs, interface, matrices)");
     fe = slice->get_fe_lagrange(fe_degree);
 
     if (slice->is_hex())

@@ -71,6 +71,13 @@ namespace internodes
   InternodesSchurComplement::step3(TrilinosWrappers::MPI::Vector &lambda_,
                                    TrilinosWrappers::MPI::Vector &chi)
   {
+    if (!use_preconditioner)
+      {
+        TimerOutput::Scope timer_section(timer_output(), "Step 3b: solve S lambda = chi");
+        linear_solver.solve(*this, lambda_, chi, PreconditionIdentity());
+        return;
+      }
+
     SchurPreconditioner preconditioner_schur;
     {
       TimerOutput::Scope timer_section(timer_output(), "Step 3a: initialize Schur preconditioner");
@@ -225,6 +232,7 @@ namespace internodes
     TrilinosWrappers::MPI::Vector         &res_,
     const std::shared_ptr<SubProblemBase> &subPb) const
   {
+    TimerOutput::Scope timer_section(timer_output(), "  normal derivative");
     res_ = 0.;
     res_ -= subPb->rhs_gamma;
     subPb->M_gamma_gamma().vmult_add(res_, lambda_);

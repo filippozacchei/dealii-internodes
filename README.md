@@ -70,6 +70,9 @@ cases:
 | RBF support radius | `RBF radius` (absolute), or `RBF radius factor` r_f, which sets r = r_f · h_avg on each subdomain, h_avg being the average cell diameter of its own mesh (as in the paper) |
 | Different polynomial degrees | `Master degree`, `Slave degree` |
 | Geometry-B (curved shell interface, tetrahedra) | `Type = half_hyper_shells`, `RBF radius` > 0, `Shell refinement master/slave` |
+| Single-domain reference solve | `Run/Mode = monolithic`: the same problem on the union of the two boxes at the master's resolution (CG with algebraic multigrid). Used for the paper's comparison with a single-domain solver |
+| Effect of the Schur preconditioner | `Solver/Use Schur preconditioner = false` for the unpreconditioned GMRES iteration count |
+| Machine-readable results | `Run/Results file = out.json`, see below |
 | Dirichlet / Neumann / interface assignment | `Dirichlet ids …`, `Neumann ids …`, `Interface id …` per subdomain, as lists of boundary ids |
 
 Boundary ids are those of the mesh you build: for the boxes the
@@ -78,6 +81,17 @@ Boundary ids are those of the mesh you build: for the boxes the
 `GridGenerator::half_hyper_shell` (0 = inner surface, 1 = outer surface,
 2 = flat cut). Any id, including 0, may be used on hexahedral and on
 tetrahedral meshes.
+
+### Results file
+
+With `Run/Results file = out.json` rank 0 writes a JSON file with the run
+configuration, the number of MPI ranks, the DoF, interface-DoF and cell counts
+and the average cell diameter of each subdomain, the RBF radii, the number of
+GMRES iterations, the broken $H^1$ error (in total and per subdomain), and the
+wall time of every timed phase (maximum over the ranks, and number of calls):
+subproblem and RBF setup, destination-point setup, assembly, Steps 1–4, the
+RBF `Φ` solve, the normal-derivative evaluation, and so on. This is what the
+scripts in `reproduce/` are meant to read.
 
 ### Verified results
 
@@ -94,7 +108,9 @@ Geometry-A, conforming interface (`RBF radius = 0`), broken $H^1$ error:
 | `16,8,8`   | 2.07294 | 2.06 | 0.0632763 | 3.98 |
 | `32,16,16` | 1.02826 | 2.02 |           |      |
 
-i.e. the optimal rates 1 and 2 under refinement. Meshes are listed as cells per
+i.e. the optimal rates 1 and 2 under refinement. The single-domain reference
+solve on the same mesh gives identical errors (e.g. 2.07294 for $\mathbb{P}_1$
+and 0.0632763 for $\mathbb{P}_2$ on `16,8,8`). Meshes are listed as cells per
 direction of each subdomain; they are produced as a coarse mesh refined
 globally (e.g. `16,8,8` is `4,2,2` with 2 refinements) and give the same
 results as building the fine mesh directly.
@@ -109,7 +125,8 @@ interface (master mesh twice as fine as the slave's), $\mathbb{P}_1$:
 | `32,16,16` / `16,8,8`  | 2.05898 (7) | 2.05902 (7) |
 
 The RL-RBF support radii used were 2.0, 1.0 and 0.5 for the three rows, i.e.
-proportional to the interface mesh size. The interface iteration count does
+proportional to the interface mesh size. The Schur preconditioner reduces the interface iterations from 15 to 6 on the
+first row (RL-RBF). The interface iteration count does
 not grow under refinement, and both interpolation choices reach the same
 discretization-limited accuracy.
 
