@@ -3,8 +3,11 @@
 
 #include <deal.II/base/subscriptor.h>
 
+#include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/solver_control.h>
 #include <deal.II/lac/solver_gmres.h>
+#include <deal.II/lac/trilinos_precondition.h>
+#include <deal.II/lac/trilinos_sparse_matrix.h>
 #include <deal.II/lac/trilinos_vector.h>
 
 #include "internodes/multi_domain_problem.hpp"
@@ -29,8 +32,6 @@ namespace internodes
   class InternodesSchurComplement : public Subscriptor
   {
   public:
-    InternodesSchurComplement() = default;
-
     InternodesSchurComplement(const std::shared_ptr<MultiDomainProblem> &pb,
                               const SolverControl                        &solver_control)
       : sol_omega_master(pb->master->interface_dofHandler_ptr->internal_dofs_owned())

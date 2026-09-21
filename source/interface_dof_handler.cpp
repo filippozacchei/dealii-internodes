@@ -42,27 +42,57 @@ namespace internodes
                                           ComponentMask());
 
     owned_dofs_ = dof_handler->locally_owned_dofs();
-    DoFTools::extract_locally_relevant_dofs(*dof_handler_, relevant_dofs_);
+    relevant_dofs_ = DoFTools::extract_locally_relevant_dofs(*dof_handler_);
+
+    // Interface DoFs: take the union of every rank's boundary DoFs before
+    // restricting to the locally owned ones. A DoF owned by rank r may lie
+    // only on interface faces of cells owned by another rank, in which case
+    // rank r would not see it as a boundary DoF from its own cells alone.
+    {
+      IndexSet all_interface(dof_handler_->n_dofs());
+      for (const IndexSet &set : Utilities::MPI::all_gather(
+             mpi_comm,
+             DoFTools::extract_boundary_dofs(*dof_handler_,
+                                             ComponentMask(),
+                                             interface_id)))
+        all_interface.add_indices(set);
+      interface_dofs_ = all_interface & owned_dofs_;
+    }
 
     internal_dofs_ = owned_dofs_;
     internal_dofs_.subtract_set(interface_dofs_);
 
-    // Build interface-local and internal-local DoF numberings, valid across
-    // all processes: every process independently computes the same global
-    // ordering (all owned interface/internal DoFs, gathered from every
-    // rank, in rank order), then keeps only the entries it actually owns
-    // (interface_parallelPartitioning/internal_parallelPartitioning) or can
-    // see (the "relevant" counterparts).
-    std::vector<unsigned int> interface_owned, internal_owned;
-    interface_dofs_.fill_index_vector(interface_owned);
-    internal_dofs_.fill_index_vector(internal_owned);
+    // Block-local numbering.
+    //
+    // The interface (resp. internal) DoFs of the whole subdomain, taken
+    // together over all ranks, are numbered 0..n_interface-1 (resp.
+    // 0..n_internal-1) by their *rank in ascending order of global DoF
+    // index* -- exactly IndexSet::index_within_set() of the union of all
+    // ranks' sets. Everything that needs a block-local index (the matrix and
+    // vector layouts below, interface_local_dof()/internal_local_dof(), the
+    // global support-point ordering, and the block split done by
+    // BlockIndices elsewhere) uses this one definition.
+    //
+    // The original lifex-based code instead numbered DoFs by their position
+    // in a rank-ordered concatenation of each rank's own list, which only
+    // agrees with the definition above if every rank owns a contiguous,
+    // ascending range of DoFs. That holds for p4est (hexahedral) meshes but
+    // not for parallel::fullydistributed (tetrahedral) ones, where ownership
+    // interleaves between ranks.
+    internal_dofs_total  = Utilities::MPI::all_gather(mpi_comm, internal_dofs_);
+    interface_dofs_total = Utilities::MPI::all_gather(mpi_comm, interface_dofs_);
 
-    const int n_interface_local = interface_owned.size();
-    const int n_internal_local  = internal_owned.size();
-    const int n_interface_global =
-      Utilities::MPI::sum(n_interface_local, mpi_comm);
-    const int n_internal_global =
-      Utilities::MPI::sum(n_internal_local, mpi_comm);
+    interface_dofs_total_indexSet.set_size(dof_handler_->n_dofs());
+    internal_dofs_total_indexSet.set_size(dof_handler_->n_dofs());
+    for (const auto &set : internal_dofs_total)
+      internal_dofs_total_indexSet.add_indices(set);
+    for (const auto &set : interface_dofs_total)
+      interface_dofs_total_indexSet.add_indices(set);
+
+    const types::global_dof_index n_interface_global =
+      interface_dofs_total_indexSet.n_elements();
+    const types::global_dof_index n_internal_global =
+      internal_dofs_total_indexSet.n_elements();
 
     interface_dofs_all_.set_size(n_interface_global);
     interface_dofs_all_.add_range(0, n_interface_global);
@@ -72,50 +102,39 @@ namespace internodes
     interface_relevantParallelPartitioning.set_size(n_interface_global);
     internal_relevantParallelPartitioning.set_size(n_internal_global);
 
-    const std::vector<std::vector<unsigned int>> internal_owned_total_vec =
-      Utilities::MPI::all_gather(mpi_comm, internal_owned);
-    const std::vector<std::vector<unsigned int>> interface_owned_total_vec =
-      Utilities::MPI::all_gather(mpi_comm, interface_owned);
+    for (const types::global_dof_index g : interface_dofs_)
+      interface_parallelPartitioning.add_index(interface_local_dof(g));
+    for (const types::global_dof_index g : internal_dofs_)
+      internal_parallelPartitioning.add_index(internal_local_dof(g));
+    for (const types::global_dof_index g : relevant_dofs_)
+      {
+        if (interface_dofs_total_indexSet.is_element(g))
+          interface_relevantParallelPartitioning.add_index(interface_local_dof(g));
+        if (internal_dofs_total_indexSet.is_element(g))
+          internal_relevantParallelPartitioning.add_index(internal_local_dof(g));
+      }
 
-    std::vector<unsigned int> internal_owned_total, interface_owned_total;
-    for (const auto &v : internal_owned_total_vec)
-      internal_owned_total.insert(internal_owned_total.end(), v.begin(), v.end());
-    for (const auto &v : interface_owned_total_vec)
-      interface_owned_total.insert(interface_owned_total.end(), v.begin(), v.end());
-
-    for (unsigned int i = 0; i < internal_owned_total.size(); ++i)
-      if (owned_dofs_.is_element(internal_owned_total[i]))
-        internal_parallelPartitioning.add_index(i);
-    for (unsigned int i = 0; i < interface_owned_total.size(); ++i)
-      if (owned_dofs_.is_element(interface_owned_total[i]))
-        interface_parallelPartitioning.add_index(i);
-    for (unsigned int i = 0; i < internal_owned_total.size(); ++i)
-      if (relevant_dofs_.is_element(internal_owned_total[i]))
-        internal_relevantParallelPartitioning.add_index(i);
-    for (unsigned int i = 0; i < interface_owned_total.size(); ++i)
-      if (relevant_dofs_.is_element(interface_owned_total[i]))
-        interface_relevantParallelPartitioning.add_index(i);
-
-    internal_dofs_total  = Utilities::MPI::all_gather(mpi_comm, internal_dofs_);
-    interface_dofs_total = Utilities::MPI::all_gather(mpi_comm, interface_dofs_);
-
-    interface_dofs_total_indexSet.set_size(interface_dofs_.size());
-    internal_dofs_total_indexSet.set_size(internal_dofs_.size());
-    for (const auto &set : internal_dofs_total)
-      internal_dofs_total_indexSet.add_indices(set);
-    for (const auto &set : interface_dofs_total)
-      interface_dofs_total_indexSet.add_indices(set);
-
-    for (std::size_t i = 0; i < interface_dofs_.n_elements(); ++i)
-      support_points_[i] =
-        support_points_dof_handler[interface_dofs_.nth_index_in_set(i)];
+    // Support points of the owned interface DoFs (ascending global DoF
+    // order), then gathered from all ranks and placed at each DoF's
+    // block-local position, so that support_points_global_[k] is the point
+    // of the interface DoF with block-local index k.
+    support_points_.assign(interface_dofs_.n_elements(), Point<dim>());
+    reference_points_.assign(interface_dofs_.n_elements(), Point<dim>());
+    {
+      std::size_t i = 0;
+      for (const types::global_dof_index g : interface_dofs_)
+        support_points_[i++] = support_points_dof_handler[g];
+    }
 
     support_points_total = Utilities::MPI::all_gather(mpi_comm, support_points_);
-    support_points_global_.reserve(interface_dofs_total.size());
-    for (const auto &points : support_points_total)
-      support_points_global_.insert(support_points_global_.end(),
-                                     points.begin(),
-                                     points.end());
+    support_points_global_.assign(n_interface_global, Point<dim>());
+    for (std::size_t rank = 0; rank < interface_dofs_total.size(); ++rank)
+      {
+        std::size_t j = 0;
+        for (const types::global_dof_index g : interface_dofs_total[rank])
+          support_points_global_[interface_local_dof(g)] =
+            support_points_total[rank][j++];
+      }
   }
 
   unsigned int
@@ -240,7 +259,11 @@ namespace internodes
       this->dof_handler()->get_fe().n_dofs_per_cell();
 
     const unsigned int      n_interface(interface_dofs_owned().size());
-    DynamicSparsityPattern dsp(n_interface, n_interface);
+    // deal.II >= 9.5 requires the pattern to be constructed with the same
+    // locally-relevant row set later passed to distribute_sparsity_pattern().
+    DynamicSparsityPattern dsp(n_interface,
+                               n_interface,
+                               interface_dofs_relevant());
 
     std::vector<types::global_dof_index> local_dof_indices(dofs_per_face);
 

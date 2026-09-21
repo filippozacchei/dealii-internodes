@@ -78,9 +78,12 @@ namespace internodes
       : slice(mesh)
       , fe_degree(fe_degree)
       , dof_handler(std::make_shared<DoFHandler<dim>>())
-      , dirichlet_ids(boundary_tags.at("Dirichlet"))
-      , neumann_ids(boundary_tags.at("Neumann"))
-      , interface_id(boundary_tags.at("Interface"))
+      // Translate the ids of the mesh handed to MeshHandler::create() into
+      // the ids stored in the distributed triangulation (see
+      // MeshHandler::to_internal_boundary_id()).
+      , dirichlet_ids(mesh->to_internal_boundary_ids(boundary_tags.at("Dirichlet")))
+      , neumann_ids(mesh->to_internal_boundary_ids(boundary_tags.at("Neumann")))
+      , interface_id(mesh->to_internal_boundary_ids(boundary_tags.at("Interface")))
       , fun(dirichlet_fun)
       , fun_neumann(neumann_fun)
       , forcing_term(forcing_term)
@@ -115,6 +118,20 @@ namespace internodes
     /// internal-internal block $A_{k,k}$.
     void
     assembly_preconditioner();
+
+    /// Sets the Dirichlet-constrained entries of @p internal_solution -- a
+    /// vector indexed by the *internal-block-local* numbering, as returned
+    /// by the block solves -- to their prescribed values.
+    ///
+    /// This replaces `constraints_dirichlet.distribute()`: that function
+    /// requires a vector in the DoFHandler's own (full) numbering, and only
+    /// appeared to work on internal-block vectors in older deal.II because
+    /// it did not check the size, relying on the two numberings happening
+    /// to coincide (true in serial, not in general). Since the constraints
+    /// here are pure Dirichlet (no constraint entries / hanging nodes),
+    /// distribute() amounts to exactly this assignment.
+    void
+    apply_dirichlet_to_internal(TrilinosWrappers::MPI::Vector &internal_solution) const;
 
     /// Replaces the forcing term and boundary data (used by
     /// InternodesSchurComplement to zero out the problem data before

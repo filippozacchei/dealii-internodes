@@ -70,15 +70,19 @@ namespace internodes
     mutable TrilinosWrappers::MPI::Vector residual_master;
     mutable TrilinosWrappers::MPI::Vector residual_slave;
 
-    /// AMG preconditioner (and its settings) for the slave's interface mass
-    /// matrix $M_{\Gamma_2}$, used to apply $M_{\Gamma_2}^{-1}$ in
-    /// interpolateResidual(). Initialized externally by
-    /// InternodesSchurComplement::stepP(), not by this class itself --
-    /// ported as-is from the original, where the same split ownership
-    /// exists (kept for now; folding the initialization in here would be a
-    /// natural cleanup but changes the original's structure).
-    TrilinosWrappers::PreconditionAMG::AdditionalData amg_data;
-    TrilinosWrappers::PreconditionAMG                  precond;
+    /// Preconditioner for the slave's interface mass matrix $M_{\Gamma_2}$,
+    /// used to apply $M_{\Gamma_2}^{-1}$ in interpolateResidual().
+    /// Initialized externally by InternodesSchurComplement::stepP().
+    ///
+    /// Jacobi (diagonal) is used deliberately rather than algebraic
+    /// multigrid: a mass matrix is spectrally equivalent to its diagonal
+    /// (the diagonally scaled condition number is bounded independently of
+    /// the mesh size), so Jacobi-preconditioned CG converges in a few
+    /// iterations, whereas AMG with a direct (Amesos-KLU) coarse solver --
+    /// what the original lifex-based code used here -- proved fragile on
+    /// small parallel interface matrices (NumericFactorization failures on
+    /// tetrahedral meshes).
+    TrilinosWrappers::PreconditionJacobi precond;
 
   private:
     void

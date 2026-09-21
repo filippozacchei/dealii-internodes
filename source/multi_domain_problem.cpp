@@ -20,12 +20,6 @@ namespace internodes
       master->interface_dofHandler_ptr->support_points_global());
     master->interface_dofHandler_ptr->setup_destination_points(
       slave->interface_dofHandler_ptr->support_points_global());
-
-    amg_data.higher_order_elements = false;
-    amg_data.aggregation_threshold = 1e-3;
-    amg_data.smoother_sweeps       = 2;
-    amg_data.smoother_type         = "Chebyshev";
-    amg_data.coarse_type           = "Amesos-KLU";
   }
 
   void

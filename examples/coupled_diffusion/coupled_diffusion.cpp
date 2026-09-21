@@ -289,8 +289,10 @@ build_adjacent_boxes(MeshHandler                     &mesh,
 {
   const Point<dim> p1 = is_master ? Point<dim>(-2, -1, -1) : Point<dim>(0, -1, -1);
   const Point<dim> p2 = is_master ? Point<dim>(0, 1, 1) : Point<dim>(2, 1, 1);
+  Triangulation<dim> serial_tria;
   GridGenerator::subdivided_hyper_rectangle(
-    mesh.get(), subdivisions, p1, p2, /* colorize = */ true);
+    serial_tria, subdivisions, p1, p2, /* colorize = */ true);
+  mesh.create(serial_tria);
 }
 
 /// Geometry-B: two half hyper-shells (annuli split by a plane through the
@@ -331,7 +333,18 @@ build_half_hyper_shells(MeshHandler        &mesh,
   Triangulation<dim> simplex_tria;
   GridGenerator::convert_hypercube_to_simplex_mesh(hex_tria, simplex_tria);
 
-  mesh.get().copy_triangulation(simplex_tria);
+  // The hex half-shell carries a SphericalManifold (used above to place the
+  // refined vertices on the sphere); the conversion keeps the manifold *ids*
+  // on the cells but not the manifold object. The paper's Gmsh tetrahedra
+  // are plain straight-sided linear tets, so drop to flat manifolds -- the
+  // curved-vertex placement has already been done by the refinement.
+  // (reset_all_manifolds() alone only removes the manifold *objects*; the
+  // manifold *ids* on cells/faces would still refer to the removed
+  // SphericalManifold, so they must be reset to flat explicitly too.)
+  simplex_tria.set_all_manifold_ids(numbers::flat_manifold_id);
+  simplex_tria.reset_all_manifolds();
+
+  mesh.create(simplex_tria);
 }
 
 // =========================================================================
@@ -484,12 +497,18 @@ main(int argc, char *argv[])
            {std::tuple{master.get(), &solution_master, parameters.master_degree},
             std::tuple{slave.get(), &solution_slave, parameters.slave_degree}})
         {
+          // Cell-type-aware mapping/quadrature (hex vs. tet), from the same
+          // MeshHandler the solver itself used.
+          const auto mapping    = sub->slice->get_linear_mapping();
+          const auto quadrature = sub->slice->get_quadrature_gauss(degree + 2);
+
           Vector<double> difference_per_cell(sub->slice->get().n_active_cells());
-          VectorTools::integrate_difference(*sub->dof_handler,
+          VectorTools::integrate_difference(*mapping,
+                                            *sub->dof_handler,
                                             *sol,
                                             ExactSolution(),
                                             difference_per_cell,
-                                            QGauss<dim>(degree + 2),
+                                            *quadrature,
                                             VectorTools::H1_norm);
           const double local_error =
             VectorTools::compute_global_error(sub->slice->get(),

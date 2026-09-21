@@ -62,7 +62,7 @@ namespace internodes
     dof_handler->renumber_dofs(new_numbers_owned);
 
     owned_dofs = dof_handler->locally_owned_dofs();
-    DoFTools::extract_locally_relevant_dofs(*dof_handler, relevant_dofs);
+    relevant_dofs = DoFTools::extract_locally_relevant_dofs(*dof_handler);
 
     if (radius > 0.)
       interface_dofHandler_ptr =
@@ -80,13 +80,6 @@ namespace internodes
     interface_dofHandler_ptr->interfaceMassMatrix(sp_M_gamma,
                                                    M_gamma,
                                                    *face_quadrature_formula);
-
-    const types::global_dof_index n_internal =
-      interface_dofHandler_ptr->internal_dofs_global().n_elements();
-    const types::global_dof_index n_interface =
-      interface_dofHandler_ptr->interface_dofs_global().n_elements();
-    (void)n_internal;
-    (void)n_interface;
 
     const std::vector<IndexSet> relevant_dofs_block = {
       interface_dofHandler_ptr->internal_dofs_relevant(),
@@ -114,7 +107,7 @@ namespace internodes
     // Note: reinit() with the locally relevant DoFs is required by modern
     // deal.II for correct parallel behavior; the original lifex-based code
     // relied on lifex::utils::BCHandler doing this internally.
-    constraints_dirichlet.reinit(relevant_dofs);
+    constraints_dirichlet.reinit(owned_dofs, relevant_dofs);
 
     for (const auto &id : dirichlet_ids)
       VectorTools::interpolate_boundary_values(*dof_handler,
@@ -127,6 +120,18 @@ namespace internodes
 
     rhs_in    = rhs.block(0);
     rhs_gamma = rhs.block(1);
+  }
+
+  void
+  SubProblemBase::apply_dirichlet_to_internal(
+    TrilinosWrappers::MPI::Vector &internal_solution) const
+  {
+    const InterfaceDoFHandler &idh = *interface_dofHandler_ptr;
+    for (const types::global_dof_index global_dof : idh.internal_dofs())
+      if (constraints_dirichlet.is_constrained(global_dof))
+        internal_solution[idh.internal_local_dof(global_dof)] =
+          constraints_dirichlet.get_inhomogeneity(global_dof);
+    internal_solution.compress(VectorOperation::insert);
   }
 
   void

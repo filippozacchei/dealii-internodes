@@ -20,7 +20,7 @@ namespace internodes
     TimerOutput::Scope timer_section(timer_output(), "Step 0: assembly (preconditioners)");
     problem->master->assembly_preconditioner();
     problem->slave->assembly_preconditioner();
-    problem->precond.initialize(problem->slave->M_gamma, problem->amg_data);
+    problem->precond.initialize(problem->slave->M_gamma);
   }
 
   void
@@ -215,7 +215,7 @@ namespace internodes
                                   pb_rhs,
                                   subPb->preconditioner_in_in);
 
-    subPb->constraints_dirichlet.distribute(solution_);
+    subPb->apply_dirichlet_to_internal(solution_);
   }
 
   void

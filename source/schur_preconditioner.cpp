@@ -19,7 +19,7 @@ namespace internodes
     auto       &owned_dofs    = problem->master->owned_dofs;
     auto       &relevant_dofs = problem->master->relevant_dofs;
 
-    DoFTools::extract_locally_relevant_dofs(dof_handler, relevant_dofs);
+    relevant_dofs = DoFTools::extract_locally_relevant_dofs(dof_handler);
 
     DynamicSparsityPattern dsp(relevant_dofs);
     DoFTools::make_sparsity_pattern(dof_handler, dsp);

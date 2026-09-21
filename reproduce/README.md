@@ -33,8 +33,10 @@ just in degree of approximation:
   `GridGenerator::half_hyper_shell()` and converts it to simplex cells via
   `GridGenerator::convert_hypercube_to_simplex_mesh()`. This matches the
   paper's *cell type* (tetrahedral, exercising the same `FE_SimplexP`/
-  `QGaussSimplex`/`MappingFE` code path `MeshHandler` uses for real Gmsh
-  imports) but not the exact mesh Gmsh would produce for the same geometry.
+  `QGaussSimplex`/`MappingFE` and fully-distributed-triangulation code path
+  that a Gmsh-imported tetrahedral mesh would use via `MeshHandler::create()`)
+  but not the exact mesh Gmsh would produce for the same geometry. Reading
+  Gmsh files is not wired into the example driver.
 
 ## Configurations
 

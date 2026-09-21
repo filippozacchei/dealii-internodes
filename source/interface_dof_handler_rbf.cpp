@@ -31,7 +31,9 @@ namespace internodes
 
     pcout() << "Assembling RBF sparsity pattern..." << std::endl;
     const unsigned int n_interface(interface_dofs_owned().size());
-    DynamicSparsityPattern dsp(n_interface, n_interface);
+    DynamicSparsityPattern dsp(n_interface,
+                               n_interface,
+                               interface_dofs_relevant());
 
     for (std::size_t i = 0; i < interface_dofs_owned().n_elements(); ++i)
       {
