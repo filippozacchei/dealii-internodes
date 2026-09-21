@@ -38,6 +38,7 @@ namespace internodes
     // Renumber DoFs so that all interface DoFs come last -- this is what
     // makes the subsequent block split (block 0 = internal, block 1 =
     // interface) a contiguous range rather than a scattered set.
+    TimerOutput::Scope renumber_timer(timer_output(), "setup: interface-DoFs-last renumbering");
     const IndexSet interface_dofs_pre(
       DoFTools::extract_boundary_dofs(*dof_handler, ComponentMask(), interface_id));
 
@@ -60,6 +61,7 @@ namespace internodes
         new_numbers_owned[dof_handler->locally_owned_dofs().index_within_set(i)] =
           new_numbers[i];
     dof_handler->renumber_dofs(new_numbers_owned);
+    renumber_timer.stop();
 
     owned_dofs = dof_handler->locally_owned_dofs();
     relevant_dofs = DoFTools::extract_locally_relevant_dofs(*dof_handler);
