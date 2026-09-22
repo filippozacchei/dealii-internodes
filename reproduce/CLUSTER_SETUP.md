@@ -274,11 +274,67 @@ left off.
 - This installs Trilinos and p4est along with deal.II — no separate METIS
   build is needed (the port's `MeshHandler` uses p4est / the z-order
   partitioner, not METIS).
-- Expect on the order of 1-3 hours depending on the node and `-j`. It is safe
-  to rerun if interrupted; candi skips packages it already built.
+- Expect on the order of 1-3 hours depending on the node and `-j`. It is
+  safe to rerun if interrupted, but only packages named with a `once:`
+  prefix are actually skipped on a rerun (see below) -- a plain package
+  name is refetched and rebuilt from scratch every time.
 - If the compute nodes have no internet access (common), make sure this runs
   on a node that does (usually the login node), since candi downloads
   tarballs of each package.
+
+**If deal.II's own configure fails with "Could not find any suitable mpi
+library!" / "Could NOT find MPI_CXX (missing: MPI_CXX_LIB_NAMES
+MPI_CXX_HEADER_DIR MPI_CXX_WORKS)"** -- even though `mpicc`/`mpicxx`/`mpif90`
+all work fine standalone and Trilinos just built successfully with the same
+compilers: this is CMake's `FindMPI` failing to *manually* locate MPI's
+headers/libraries for C++ specifically. It happens because candi's
+`USE_DEAL_II_CMAKE_MPI_COMPILER=ON` (a workaround for a different, genuine
+deal.II/CMake issue, #11478 -- candi's own comment above it admits "this
+currently is not reliable enough to enable by default", yet it *is* ON by
+default) `unset`s `CXX`/`CC` before configuring deal.II, so
+`CMAKE_CXX_COMPILER` ends up a plain `g++` rather than the `mpicxx` wrapper.
+With a plain compiler, `FindMPI` has to search for MPI's headers/libraries
+itself -- and on a cluster with two mount-point names for the same install
+(here, CINECA's `/g100/prod/...` and `/cineca/prod/...` both leading to the
+same physical Intel MPI), its C-language search happened to land on one
+alias while its C++-language search only tries the other, which doesn't
+have the file CMake is looking for at that exact path. Confirmed by
+tracing `deal.II-toolchain/packages/dealii.package` and
+`cmake/configure/configure_10_mpi.cmake`/`cmake/modules/FindDEAL_II_MPI.cmake`
+in the deal.II source, and by CMake's own `--debug-find` trace (added to
+`DEAL_II_CONFOPTS`) showing the C++ `find_path` candidate list never
+contained the directory that has `mpi.h`, while the C search's did.
+
+Two things that looked plausible but did **not** fix it, so they aren't
+worth retrying: passing explicit absolute-path
+`-D MPI_C_COMPILER=... -D MPI_CXX_COMPILER=... -D MPI_Fortran_COMPILER=...`
+via `DEAL_II_CONFOPTS` (candi's existing `USE_DEAL_II_CMAKE_MPI_COMPILER=ON`
+mechanism already does something equivalent with bare names, and the
+underlying alias-search bug persists regardless of absolute vs. bare); and
+exporting `MPI_HOME` (an environment hint `FindMPI` is documented to read,
+but it made no difference here).
+
+The actual fix: turn that workaround **off**, so `CMAKE_CXX_COMPILER` stays
+the `mpicxx` wrapper. When the C++ compiler *is* the MPI wrapper, `FindMPI`
+recognizes this immediately and succeeds with empty
+`MPI_CXX_INCLUDE_DIRS`/`MPI_CXX_LIBRARIES` -- correct, not a bug, since the
+wrapper already bakes those flags into every compile/link (confirmed with a
+plain `mpicxx test.cpp -o test && ./test`, and with a tiny standalone CMake
+project doing only `find_package(MPI REQUIRED COMPONENTS CXX)`, which is
+worth reaching for early in place of iterating on the full, much slower
+deal.II configure -- it reports the same result in a couple of seconds):
+
+```bash
+cd $WORK/candi
+sed -i 's/^USE_DEAL_II_CMAKE_MPI_COMPILER=ON/USE_DEAL_II_CMAKE_MPI_COMPILER=OFF/' candi.cfg
+grep USE_DEAL_II_CMAKE_MPI_COMPILER candi.cfg    # confirm it now says OFF
+
+rm -rf $WORK/dealii-candi/tmp/build/deal.II-v9.8.0
+
+./candi.sh --packages="once:p4est once:trilinos dealii" \
+           --prefix=$WORK/dealii-candi -j 8 --yes \
+           --platform=deal.II-toolchain/platforms/supported/almalinux8.platform
+```
 
 ## 3. Build dealii-internodes against it
 
@@ -288,9 +344,13 @@ Trilinos were built with.
 
 ```bash
 source reproduce/cluster_env.sh   # only if step 2 needed it; harmless otherwise
+ls $WORK/dealii-candi/                          # find the actual deal.II-vX.Y.Z name
+                                                 # candi fetches the latest tagged
+                                                 # release when no version is pinned,
+                                                 # so don't assume it matches this guide
 cd /path/to/dealii-internodes
 mkdir build && cd build
-cmake -DDEAL_II_DIR=$WORK/dealii-candi/deal.II-v9.7.0 -DCMAKE_BUILD_TYPE=Release ..
+cmake -DDEAL_II_DIR=$WORK/dealii-candi/deal.II-vX.Y.Z -DCMAKE_BUILD_TYPE=Release ..
 make -j 8 coupled_diffusion
 ```
 
