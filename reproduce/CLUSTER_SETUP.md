@@ -154,8 +154,23 @@ sed -i 's|^# MKL_DIR=|MKL_DIR=$MKLROOT/lib/intel64|' candi.cfg    # $MKLROOT lef
                                                                    # resolves it at run time
 ```
 
-Then rerun the same `./candi.sh ...` command; candi checkpoints completed
-packages, so it resumes at Trilinos rather than rebuilding p4est.
+Then rerun `./candi.sh` -- but **not** the exact same command: by default
+candi refetches and rebuilds *every* package named in `--packages` from
+scratch on every invocation, even ones that already succeeded (there is no
+automatic checkpointing -- an earlier version of this note claimed there
+was; it doesn't). Mark packages that already built successfully with a
+`once:` prefix so they're actually skipped (this checks for a
+`candi_successful_build` marker file candi writes in that package's build
+directory on success, e.g.
+`$WORK/dealii-candi/tmp/build/p4est-2.8.7/candi_successful_build`) --
+otherwise every retry of a later step pays for the full Trilinos build
+again:
+
+```bash
+./candi.sh --packages="once:p4est once:trilinos dealii" \
+           --prefix=$WORK/dealii-candi -j 8 --yes \
+           --platform=deal.II-toolchain/platforms/supported/almalinux8.platform
+```
 
 **If Kokkos (a Trilinos dependency) refuses to configure with "Compiler not
 supported ... Intel: not supported"**: recent Kokkos versions dropped
