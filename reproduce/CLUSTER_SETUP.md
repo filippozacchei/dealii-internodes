@@ -157,6 +157,25 @@ sed -i 's|^# MKL_DIR=|MKL_DIR=$MKLROOT/lib/intel64|' candi.cfg    # $MKLROOT lef
 Then rerun the same `./candi.sh ...` command; candi checkpoints completed
 packages, so it resumes at Trilinos rather than rebuilding p4est.
 
+**If Trilinos then fails on a *different* TPL you never asked for** (e.g.
+SCALAPACK, ParMETIS, MUMPS) **and the library paths in the log point outside
+your candi `--prefix`** (e.g. into a `lifex-env`-style directory): some
+other environment already on this machine -- typically sourced
+unconditionally from `.bashrc` on every login, as CINECA's lifex
+environments often are -- is exporting `..._DIR` variables that
+`trilinos.package` picks up and force-enables TPLs for. Check what's
+actually set and strip it before building:
+
+```bash
+env | grep -iE "_dir=|_lib|scalapack|parmetis|mumps" | sort
+unset PARMETIS_DIR SCALAPACK_DIR MUMPS_DIR PETSC_DIR SLEPC_DIR ADOLC_DIR ARPACK_DIR TRILINOS_DIR P4EST_DIR
+```
+
+then rerun `./candi.sh ...` again. This port needs neither ParMETIS nor
+ScaLAPACK (p4est's own z-order partitioner is used, not METIS), so with
+these unset Trilinos should simply stop trying to enable them rather than
+needing them pointed anywhere.
+
 - `--prefix` is where everything gets installed; `-j` is the parallel build
   job count (match `--cpus-per-task` above). No `-j` given defaults to a
   small number, so pass it explicitly for a faster build.
