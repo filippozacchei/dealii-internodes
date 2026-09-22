@@ -27,13 +27,54 @@ grep DEAL_II_PACKAGE_VERSION  $DEAL_II_DIR/include/deal.II/base/config.h
 grep -E "DEAL_II_WITH_(TRILINOS|P4EST|MPI) " $DEAL_II_DIR/include/deal.II/base/config.h
 ```
 
-Needed: version >= 9.5, and `DEAL_II_WITH_TRILINOS`/`DEAL_II_WITH_P4EST`/
-`DEAL_II_WITH_MPI` all `#define`d to 1 (not commented out to 0). If that's
-the case, skip straight to step 3 below with this `DEAL_II_DIR`. If it's
-missing, too old, or the environment no longer works (as can happen after
-cluster software updates), fall back to steps 1-2.
+Needed in principle: version >= 9.5, and `DEAL_II_WITH_TRILINOS`/
+`DEAL_II_WITH_P4EST`/`DEAL_II_WITH_MPI` all `#define`d to 1. If that's the
+case, skip straight to step 3 below with this `DEAL_II_DIR`.
 
-Tell me what these print and I'll say which path to take.
+**If the version is older (e.g. a candi-based lifex environment often has
+something like deal.II-9.3.x):** don't discard it outright -- a `cmake`+
+`make` attempt costs a few minutes, against the 1-3 hours of a fresh candi
+build, so it's worth just trying first, *especially* for Tests 1-3, which
+are purely hexahedral and so don't touch this port's simplex/tetrahedra
+code path (the part most likely to be fragile on an older deal.II; simplex
+support was still experimental in the 9.3-9.4 era). A handful of newer
+DoFTools/AffineConstraints/TimerOutput call signatures used here might not
+exist on an older deal.II either, but those are the kind of thing that
+either isn't hit by the hex-only path, or shows up as a clear, easily-fixed
+compile error rather than a silent problem:
+
+```bash
+source /path/to/lifex-env/configuration/enable_lifex.sh   # sets DEAL_II_DIR,
+                                                            # LD_LIBRARY_PATH etc.
+cd /path/to/dealii-internodes
+mkdir build-old && cd build-old
+cmake -DCMAKE_BUILD_TYPE=Release ..
+make -j8 coupled_diffusion
+```
+
+Two outcomes:
+- **`cmake` itself refuses** (version check, or missing Trilinos/p4est) --
+  paste the message back; that's a clear "use candi instead" (steps 1-4).
+- **`cmake` succeeds but `make` fails** -- paste the *first* compiler error
+  (not the whole log); it will name the exact API that changed, which is
+  usually a small, mechanical fix rather than a reason to rebuild deal.II.
+- **Both succeed** -- run it against one of the small hex cases in
+  `reproduce/` or `examples/coupled_diffusion/coupled_diffusion.prm` and
+  check the printed error/iteration count against the ones recorded in the
+  top-level README, to make sure an older deal.II hasn't silently changed
+  any numerics.
+
+If any of this points to "rebuild", fall back to steps 1-4, and use the
+Intel oneAPI toolchain from your `.bashrc` (`intel/oneapi-2021`,
+`intelmpi/oneapi-2021`) rather than GNU+OpenMPI -- it's already proven to
+build this exact dependency stack on this cluster (that's what built the
+`lifex-env` you just listed), and `CC`/`CXX` are already set to the right
+MPI compiler wrappers once those modules are loaded (`export CC=${MPICC}`
+etc., as in your `.bashrc`). Use a **separate `--prefix`** from `lifex-env`
+so this build cannot disturb whatever still depends on it, e.g.
+`--prefix=$WORK/dealii-internodes-candi`, and load the modules directly
+rather than sourcing `enable_lifex.sh` (which would point `DEAL_II_DIR` back
+at the old 9.3.1 install).
 
 ## 1. Load a compiler and MPI, on a login/build node
 
