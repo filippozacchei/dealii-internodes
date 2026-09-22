@@ -170,10 +170,20 @@ than restarting with a different MPI module entirely:
 ```bash
 which mpicc mpicxx mpif90
 mpicc -show                          # confirm it wraps gcc, not icc
+```
 
-export CC=mpicc
-export CXX=mpicxx
-export FC=mpif90
+If those check out, use `cluster_env.sh` (this directory) rather than
+exporting `CC`/`CXX`/`FC` ad hoc or adding them to `.bashrc`: it's a small,
+explicit, reusable script rather than a change to your shell's global
+default compiler (which would affect anything else you build on this login,
+not just this project), and the *same* compiler is needed consistently at
+every later step too (building `dealii-internodes` in step 3, running it in
+step 4, and any batch job `scalability.py` submits), since mixing a
+GCC-built Trilinos/deal.II with Intel-compiled application code risks a
+C++ ABI mismatch:
+
+```bash
+source reproduce/cluster_env.sh      # sets CC=mpicc, CXX=mpicxx, FC=mpif90
 
 # CMake caches the detected compiler in the build directory from the failed
 # attempt(s); clearing it forces a fresh configure with the new compiler
@@ -238,7 +248,12 @@ left off.
 
 ## 3. Build dealii-internodes against it
 
+If step 2 needed the `cluster_env.sh` compiler swap (Kokkos/Intel), `source`
+it again here first -- this build must use the same compiler deal.II/
+Trilinos were built with.
+
 ```bash
+source reproduce/cluster_env.sh   # only if step 2 needed it; harmless otherwise
 cd /path/to/dealii-internodes
 mkdir build && cd build
 cmake -DDEAL_II_DIR=$WORK/dealii-candi/deal.II-v9.7.0 -DCMAKE_BUILD_TYPE=Release ..
@@ -256,7 +271,8 @@ starts under `srun` (or your launcher) with the modules loaded, e.g. in the
 same interactive allocation as step 1:
 
 ```bash
-module load openmpi/<version>   # whatever MPI candi built deal.II against
+module load <whatever MPI module candi built deal.II against>
+source reproduce/cluster_env.sh   # only if step 2 needed it; harmless otherwise
 srun -n 4 ./build/examples/coupled_diffusion/coupled_diffusion \
      reproduce/coupled_diffusion.prm
 ```
@@ -273,6 +289,9 @@ run the exact same command.
   `module load` commands needed to reproduce the environment of steps 3-4,
   separated by `&&` or newlines within the quoted string, e.g.
   `--modules "module load gcc/<v> openmpi/<v>"$'\n'"module load cmake"`.
+  If step 2 needed `cluster_env.sh`, add
+  `$'\n'"source reproduce/cluster_env.sh"` too, so the batch job uses the
+  same compiler the executable was actually built and linked with.
 - `--launcher` (default `srun`) is whatever your site uses to start an MPI
   program inside a batch script (`srun`, or `mpirun` on some systems).
 - If the candi build fails at the Trilinos step (needed for the AMG/ML
