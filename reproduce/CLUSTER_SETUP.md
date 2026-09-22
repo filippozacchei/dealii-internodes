@@ -173,17 +173,36 @@ mpicc -show                          # confirm it wraps gcc, not icc
 ```
 
 If those check out, use `cluster_env.sh` (this directory) rather than
-exporting `CC`/`CXX`/`FC` ad hoc or adding them to `.bashrc`: it's a small,
-explicit, reusable script rather than a change to your shell's global
-default compiler (which would affect anything else you build on this login,
-not just this project), and the *same* compiler is needed consistently at
-every later step too (building `dealii-internodes` in step 3, running it in
-step 4, and any batch job `scalability.py` submits), since mixing a
-GCC-built Trilinos/deal.II with Intel-compiled application code risks a
-C++ ABI mismatch:
+exporting `CC`/`CXX`/`FC` ad hoc: it's a small, explicit, reusable script,
+and the *same* compiler is needed consistently at every later step too
+(building `dealii-internodes` in step 3, running it in step 4, and any
+batch job `scalability.py` submits), since mixing a GCC-built Trilinos/
+deal.II with Intel-compiled application code risks a C++ ABI mismatch.
+
+**If this account is dedicated to this project** (not shared with other
+work that might want the Intel classic compiler on purpose), it's also
+reasonable to just make the swap permanent in `.bashrc` instead, mirroring
+the block already there:
+
+```bash
+cp ~/.bashrc ~/.bashrc.bak-$(date +%Y%m%d)
+sed -i \
+  -e 's|^export CC=\${MPICC}|export CC=mpicc|' \
+  -e 's|^export CXX=\${MPICXX}|export CXX=mpicxx|' \
+  -e 's|^export FC=\${MPIFC}|export FC=mpif90|' \
+  -e 's|^export FF=\${MPIF77}|export FF=mpif90|' \
+  -e 's|^export F77=\${MPIF77}|export F77=mpif90|' \
+  -e 's|^export F90=\${MPIF90}|export F90=mpif90|' \
+  ~/.bashrc
+```
+
+then log out and back in. With that done, `cluster_env.sh` becomes
+redundant (harmless if sourced anyway -- it just re-exports the same
+values) since every new shell already has the right compiler by default.
 
 ```bash
 source reproduce/cluster_env.sh      # sets CC=mpicc, CXX=mpicxx, FC=mpif90
+                                       # (skip if already permanent in .bashrc)
 
 # CMake caches the detected compiler in the build directory from the failed
 # attempt(s); clearing it forces a fresh configure with the new compiler

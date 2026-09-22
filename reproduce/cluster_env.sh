@@ -6,12 +6,16 @@
 # equivalents from the *same* Intel MPI installation (same MPI library and
 # transport, different underlying compiler).
 #
-# Deliberately not folded into .bashrc: CC/CXX/FC are the default compiler
+# Not folded into .bashrc by default: CC/CXX/FC are the default compiler
 # for anything built on this login, not just this project, and once
 # deal.II/Trilinos are built with one compiler, this port must be built
 # (step 3) and run (step 4, and any scalability.py batch job) with the
 # *same* one for ABI compatibility -- so source this explicitly at each of
-# those points rather than relying on a background default.
+# those points rather than relying on a background default, UNLESS you
+# know this account is dedicated to this project, in which case putting
+# the same export lines directly in .bashrc is a reasonable simplification
+# (see CLUSTER_SETUP.md) -- in that case sourcing this script is harmless
+# but redundant (it just re-exports the same values).
 #
 #   source reproduce/cluster_env.sh
 #
