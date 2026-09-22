@@ -185,19 +185,37 @@ namespace internodes
   InternodesSchurComplement::vmult(TrilinosWrappers::MPI::Vector       &residual_,
                                    const TrilinosWrappers::MPI::Vector &lambda_) const
   {
-    problem->master->interface_dofHandler_ptr->interpolate(
-      lambda_slave,
-      lambda_,
-      problem->slave->interface_dofHandler_ptr->support_points_global());
+    // One call = one Schur mat-vec (Algorithm "Matrix-Vector Product for the
+    // Schur Complement System" in the paper), i.e. one GMRES iteration of
+    // Step 3. Timed in three pieces matching that algorithm's own steps
+    // (Q21 interpolation; the two subdomain solves A_{k,k} u_k = ...; the
+    // residual r_{Gamma_k} and its Q12 transfer), so that Step 3's own cost
+    // -- as opposed to the same operations' cost when they occur in Steps
+    // 1/2/4 -- can be broken down into "solving the subdomain systems" vs.
+    // "computing/transferring the residual", the split asserted qualitatively
+    // just above Algorithm~\ref{algo:schur-mvp} in the paper.
+    {
+      TimerOutput::Scope timer_section(timer_output(), "Step 3 (GMRES): Q21 interpolation");
+      problem->master->interface_dofHandler_ptr->interpolate(
+        lambda_slave,
+        lambda_,
+        problem->slave->interface_dofHandler_ptr->support_points_global());
+    }
 
-    solve_subproblem(lambda_, sol_omega_master, res_master_internal, problem->master);
-    solve_subproblem(lambda_slave, sol_omega_slave, res_slave_internal, problem->slave);
+    {
+      TimerOutput::Scope timer_section(timer_output(), "Step 3 (GMRES): subdomain solves");
+      solve_subproblem(lambda_, sol_omega_master, res_master_internal, problem->master);
+      solve_subproblem(lambda_slave, sol_omega_slave, res_slave_internal, problem->slave);
+    }
 
-    normalDerivative(lambda_, sol_omega_master, res_master, problem->master);
-    normalDerivative(lambda_slave, sol_omega_slave, res_slave, problem->slave);
+    {
+      TimerOutput::Scope timer_section(timer_output(), "Step 3 (GMRES): residual computation");
+      normalDerivative(lambda_, sol_omega_master, res_master, problem->master);
+      normalDerivative(lambda_slave, sol_omega_slave, res_slave, problem->slave);
 
-    problem->interpolateResidual(residual_, res_slave);
-    residual_.add(1.0, res_master);
+      problem->interpolateResidual(residual_, res_slave);
+      residual_.add(1.0, res_master);
+    }
   }
 
   void
