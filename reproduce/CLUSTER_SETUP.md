@@ -4,6 +4,37 @@ One-time setup for the scalability runs of `scalability.py` (see
 `reproduce/README.md`). Written for a generic SLURM cluster; adjust the
 module names to whatever your site provides (`module avail` to check).
 
+## 0. Check for an existing deal.II first (e.g. from a lifex install)
+
+If you already have `lifex` set up on this cluster, its environment script
+most likely already builds and exposes a deal.II with everything this port
+needs (MPI, Trilinos, p4est) -- lifex itself requires the same. If so, this
+whole candi build can be skipped. Check before doing anything else:
+
+```bash
+source /path/to/lifex-env/configuration/enable_lifex.sh   # your own path
+env | grep -i deal_ii                 # look for DEAL_II_DIR or similar
+ls /path/to/lifex-env/                # candi-based envs usually have a
+                                       # sibling deal.II-vX.Y.Z/ next to
+                                       # configuration/ (see below)
+```
+
+Once you have a candidate `$DEAL_II_DIR` (or a `deal.II-vX.Y.Z` directory),
+check it is recent and complete enough:
+
+```bash
+grep DEAL_II_PACKAGE_VERSION  $DEAL_II_DIR/include/deal.II/base/config.h
+grep -E "DEAL_II_WITH_(TRILINOS|P4EST|MPI) " $DEAL_II_DIR/include/deal.II/base/config.h
+```
+
+Needed: version >= 9.5, and `DEAL_II_WITH_TRILINOS`/`DEAL_II_WITH_P4EST`/
+`DEAL_II_WITH_MPI` all `#define`d to 1 (not commented out to 0). If that's
+the case, skip straight to step 3 below with this `DEAL_II_DIR`. If it's
+missing, too old, or the environment no longer works (as can happen after
+cluster software updates), fall back to steps 1-2.
+
+Tell me what these print and I'll say which path to take.
+
 ## 1. Load a compiler and MPI, on a login/build node
 
 candi needs to compile deal.II and its dependencies (Trilinos, p4est) from
