@@ -118,6 +118,20 @@ cd candi
            --yes
 ```
 
+If this stops with "Your operating system could not be automatically
+recognised", candi's OS detection (from `/etc/os-release`) doesn't have a
+matching platform file -- check `cat /etc/os-release` and compare its `ID`/
+`VERSION_ID` against `deal.II-toolchain/platforms/{supported,contributed}/`,
+then add `--platform=deal.II-toolchain/platforms/supported/<name>.platform`
+to the command above. On **CentOS 8** (as on CINECA's Galileo100, `ID=centos`
+`VERSION_ID=8`): there is no `centos8.platform` upstream, but
+`almalinux8.platform` is the same RHEL-8-family OS, so use
+`--platform=deal.II-toolchain/platforms/supported/almalinux8.platform`. If
+the build later fails specifically at the Trilinos step on a parmetis
+version-detection error, that platform file has a known one-line fix
+(`TRILINOS_PARMETIS_CONFOPTS ... HAVE_PARMETIS_VERSION_4_0_3`) present but
+commented out -- uncomment it and rerun.
+
 - `--prefix` is where everything gets installed; `-j` is the parallel build
   job count (match `--cpus-per-task` above). No `-j` given defaults to a
   small number, so pass it explicitly for a faster build.
