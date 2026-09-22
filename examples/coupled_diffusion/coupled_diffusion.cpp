@@ -804,6 +804,7 @@ main(int argc, char *argv[])
           pcout() << "CG converged in " << n_cg_iterations << " iterations." << std::endl;
           pcout() << "H1 error vs. exact solution: " << report.error << std::endl;
           write_results(parameters, {{"monolithic", report}}, report.error, n_cg_iterations);
+          timer_output().print_summary(); // before mpi_initialization is destroyed -- see utilities.hpp
           return 0;
         }
 
@@ -988,6 +989,7 @@ main(int argc, char *argv[])
       pcout() << "Broken H1 error vs. exact solution: " << total_error << std::endl;
 
       write_results(parameters, reports, total_error, solver.get_n_iterations());
+      timer_output().print_summary(); // before mpi_initialization is destroyed -- see utilities.hpp
     }
   catch (const std::exception &exc)
     {

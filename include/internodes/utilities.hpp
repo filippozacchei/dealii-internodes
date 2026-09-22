@@ -28,9 +28,19 @@ namespace internodes
   inline TimerOutput &
   timer_output()
   {
+    // TimerOutput::never, not ::summary: with ::summary the destructor
+    // auto-prints via an MPI collective (to gather per-rank timings), but
+    // this object is a function-local static and so is destroyed at
+    // program-exit time -- *after* main()'s own MPI_InitFinalize object
+    // (an ordinary local variable, destroyed when main() returns) has
+    // already called MPI_Finalize. Doing an MPI call after that point
+    // aborts on strict MPI implementations (observed with Intel MPI/MPICH;
+    // OpenMPI tolerates it silently, which is why this went unnoticed in
+    // local testing). Callers must explicitly call
+    // timer_output().print_summary() before main() returns instead.
     static TimerOutput instance(mpi_comm,
                                  std::cout,
-                                 TimerOutput::summary,
+                                 TimerOutput::never,
                                  TimerOutput::wall_times);
     return instance;
   }
