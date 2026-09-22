@@ -193,8 +193,11 @@ namespace internodes
     static bool
     is_hex(const Triangulation<dim> &tria)
     {
-      const std::vector<ReferenceCell> &reference_cells =
-        tria.get_reference_cells();
+      // auto rather than std::vector<ReferenceCell>: ReferenceCell became
+      // templated on dimension in some deal.II versions (e.g. 9.8), so the
+      // element type of get_reference_cells()'s return value isn't stable
+      // across the >= 9.5 range this port supports.
+      const auto &reference_cells = tria.get_reference_cells();
       Assert(reference_cells.size() == 1,
              ExcMessage("Mixed-cell-type meshes are not supported."));
       return reference_cells[0].is_hyper_cube();
@@ -210,8 +213,7 @@ namespace internodes
     static bool
     is_tet(const Triangulation<dim> &tria)
     {
-      const std::vector<ReferenceCell> &reference_cells =
-        tria.get_reference_cells();
+      const auto &reference_cells = tria.get_reference_cells();
       Assert(reference_cells.size() == 1,
              ExcMessage("Mixed-cell-type meshes are not supported."));
       return reference_cells[0].is_simplex();
