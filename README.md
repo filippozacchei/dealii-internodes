@@ -17,7 +17,7 @@ This repository is a `deal.II`-only port of the implementation described in
 - **CMake** ≥ 3.13 and a C++17 compiler
 - **MPI** (OpenMPI or MPICH)
 - **[deal.II](https://www.dealii.org/)** ≥ 9.5 (developed and tested with
-  9.7.0), configured with MPI, **Trilinos** (`TrilinosWrappers` linear algebra
+  9.8.0), configured with MPI, **Trilinos** (`TrilinosWrappers` linear algebra
   and the ML/MueLu algebraic multigrid) and **p4est** (hexahedral meshes).
   METIS is *not* required.
 
