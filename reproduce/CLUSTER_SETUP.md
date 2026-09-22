@@ -132,6 +132,31 @@ version-detection error, that platform file has a known one-line fix
 (`TRILINOS_PARMETIS_CONFOPTS ... HAVE_PARMETIS_VERSION_4_0_3`) present but
 commented out -- uncomment it and rerun.
 
+**If Trilinos fails to find BLAS/LAPACK** ("Did not find a lib in the lib
+set 'blas blas_win32 openblas'"): this happens when BLAS/LAPACK come from
+Intel MKL (e.g. a `module load mkl/...`) rather than a standalone `libblas`,
+which candi's Trilinos step doesn't look for automatically -- it has to be
+told. candi already has first-class support for this (`deal.II-toolchain/
+packages/trilinos.package` has an `MKL=ON` branch that sets the right
+library names and Trilinos compile-flag workarounds), toggled in
+`candi.cfg`, which `candi.sh` always `source`s (so this must be edited in
+the file, not just exported in the shell):
+
+```bash
+echo $MKLROOT                                                    # sanity check
+ls $MKLROOT/lib/intel64 | grep -E "^libmkl_(core|sequential|intel_lp64)\.so"
+
+cd $WORK/candi   # your candi checkout
+sed -i 's/^MKL=OFF/MKL=ON/' candi.cfg
+sed -i 's|^# MKL_DIR=|MKL_DIR=$MKLROOT/lib/intel64|' candi.cfg    # $MKLROOT left
+                                                                   # unexpanded on
+                                                                   # purpose; candi.sh
+                                                                   # resolves it at run time
+```
+
+Then rerun the same `./candi.sh ...` command; candi checkpoints completed
+packages, so it resumes at Trilinos rather than rebuilding p4est.
+
 - `--prefix` is where everything gets installed; `-j` is the parallel build
   job count (match `--cpus-per-task` above). No `-j` given defaults to a
   small number, so pass it explicitly for a faster build.
@@ -183,8 +208,7 @@ run the exact same command.
   `--modules "module load gcc/<v> openmpi/<v>"$'\n'"module load cmake"`.
 - `--launcher` (default `srun`) is whatever your site uses to start an MPI
   program inside a batch script (`srun`, or `mpirun` on some systems).
-- If Trilinos' AMG (ML/MueLu) needs a specific BLAS/LAPACK on your cluster,
-  candi normally picks up whatever `module load`ed compiler/MKL is visible;
-  if the candi build fails at the Trilinos step, that's the first thing to
-  check (`--platform=<file>` lets you point candi at a site-specific
-  configuration if your cluster already has one contributed upstream).
+- If the candi build fails at the Trilinos step (needed for the AMG/ML
+  preconditioner), see the BLAS/LAPACK and parmetis notes under step 2
+  above; `--platform=<file>` (also step 2) covers most other OS-specific
+  quirks.
