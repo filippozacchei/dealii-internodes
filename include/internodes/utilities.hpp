@@ -21,30 +21,6 @@ namespace internodes
   /// plain constant since this project has no such application framework.
   inline const MPI_Comm mpi_comm = MPI_COMM_WORLD;
 
-  /// Shared timer, printing a summary of wall-clock times for named scopes
-  /// (TimerOutput::Scope) on program exit. Replaces lifex's global
-  /// `timer_output` object. Construct-on-first-use for the same MPI
-  /// initialization-order reason as pcout() below.
-  inline TimerOutput &
-  timer_output()
-  {
-    // TimerOutput::never, not ::summary: with ::summary the destructor
-    // auto-prints via an MPI collective (to gather per-rank timings), but
-    // this object is a function-local static and so is destroyed at
-    // program-exit time -- *after* main()'s own MPI_InitFinalize object
-    // (an ordinary local variable, destroyed when main() returns) has
-    // already called MPI_Finalize. Doing an MPI call after that point
-    // aborts on strict MPI implementations (observed with Intel MPI/MPICH;
-    // OpenMPI tolerates it silently, which is why this went unnoticed in
-    // local testing). Callers must explicitly call
-    // timer_output().print_summary() before main() returns instead.
-    static TimerOutput instance(mpi_comm,
-                                 std::cout,
-                                 TimerOutput::never,
-                                 TimerOutput::wall_times);
-    return instance;
-  }
-
   /// Parallel-conditional output stream: only rank 0 actually prints,
   /// avoiding duplicated output across MPI processes. Replaces lifex's
   /// global `pcout` object.
@@ -62,6 +38,39 @@ namespace internodes
   {
     static ConditionalOStream instance(
       std::cout, Utilities::MPI::this_mpi_process(mpi_comm) == 0);
+    return instance;
+  }
+
+  /// Shared timer, printing a summary of wall-clock times for named scopes
+  /// (TimerOutput::Scope) on program exit. Replaces lifex's global
+  /// `timer_output` object. Construct-on-first-use for the same MPI
+  /// initialization-order reason as pcout() above (hence defined after it:
+  /// it uses pcout() itself, see below).
+  inline TimerOutput &
+  timer_output()
+  {
+    // TimerOutput::never, not ::summary: with ::summary the destructor
+    // auto-prints via an MPI collective (to gather per-rank timings), but
+    // this object is a function-local static and so is destroyed at
+    // program-exit time -- *after* main()'s own MPI_InitFinalize object
+    // (an ordinary local variable, destroyed when main() returns) has
+    // already called MPI_Finalize. Doing an MPI call after that point
+    // aborts on strict MPI implementations (observed with Intel MPI/MPICH;
+    // OpenMPI tolerates it silently, which is why this went unnoticed in
+    // local testing). Callers must explicitly call
+    // timer_output().print_summary() before main() returns instead.
+    //
+    // pcout(), not std::cout: TimerOutput has two MPI_Comm-taking
+    // constructor overloads -- one for a raw std::ostream, where *every*
+    // rank writes the summary (all ranks compute it, since it's a
+    // collective, but each also prints its own copy -- observed as the
+    // same table N times over, interleaved, for N ranks), and one for a
+    // ConditionalOStream, which is how deal.II restricts printing to a
+    // single rank. pcout() is exactly that.
+    static TimerOutput instance(mpi_comm,
+                                 pcout(),
+                                 TimerOutput::never,
+                                 TimerOutput::wall_times);
     return instance;
   }
 
