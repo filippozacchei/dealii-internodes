@@ -37,7 +37,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import style  # noqa: E402
 from lib import ROOT, read_prm, run_case  # noqa: E402
 
-RESULTS = ROOT / "results" / "scalability"
+def _results_dir(tag=None):
+    return ROOT / "results" / (f"scalability_{tag}" if tag else "scalability")
+
+
+RESULTS = _results_dir()
 FIGURES = ROOT / "figures" / "scalability"
 
 CORES = (48, 96, 192, 240, 288, 384, 480, 768)  # the paper's counts; p0 = 48
@@ -88,7 +92,7 @@ def test_sections(n, levels_down=0):
     return sections
 
 
-def job_script(name, np_, prm, args):
+def job_script(name, np_, prm, args, results):
     nodes = -(-np_ // args.cores_per_node)
     lines = [
         "#!/bin/bash",
@@ -96,7 +100,7 @@ def job_script(name, np_, prm, args):
         f"#SBATCH --nodes={nodes}",
         f"#SBATCH --ntasks-per-node={min(np_, args.cores_per_node)}",
         f"#SBATCH --time={args.time_limit}",
-        f"#SBATCH --output={RESULTS / name}.log",
+        f"#SBATCH --output={results / name}.log",
     ]
     if args.account:
         lines.append(f"#SBATCH --account={args.account}")
@@ -112,30 +116,32 @@ def prepare(args):
     from lib import DEFAULT_EXE, prm_text
 
     args.exe = args.exe or DEFAULT_EXE
-    RESULTS.mkdir(parents=True, exist_ok=True)
+    results = _results_dir(args.tag)
+    results.mkdir(parents=True, exist_ok=True)
     submit = ["#!/bin/bash", f"cd {ROOT}"]
     for n in map(int, args.tests.split(",")):
         for p in map(int, args.cores.split(",")):
             name = f"test{n}_np{p}"
             sections = test_sections(n, args.levels_down)
-            sections.setdefault("Run", {})["Results file"] = str(RESULTS / f"{name}.json")
-            prm = RESULTS / f"{name}.prm"
+            sections.setdefault("Run", {})["Results file"] = str(results / f"{name}.json")
+            prm = results / f"{name}.prm"
             prm.write_text(prm_text(sections))
-            script = RESULTS / f"{name}.sh"
-            script.write_text(job_script(name, p, prm, args))
+            script = results / f"{name}.sh"
+            script.write_text(job_script(name, p, prm, args, results))
             submit.append(f"sbatch {script}")
-    (RESULTS / "submit_all.sh").write_text("\n".join(submit) + "\n")
-    print(f"Wrote {len(submit) - 2} jobs to {RESULTS}; submit them with: bash {RESULTS / 'submit_all.sh'}")
+    (results / "submit_all.sh").write_text("\n".join(submit) + "\n")
+    print(f"Wrote {len(submit) - 2} jobs to {results}; submit them with: bash {results / 'submit_all.sh'}")
 
 
 def run_local(args):
+    results = _results_dir(args.tag)
     for n in map(int, args.tests.split(",")):
         print(f"Test {n} (levels lowered by {args.levels_down})")
         for p in map(int, args.cores.split(",")):
             run_case(
                 f"test{n}_np{p}",
                 test_sections(n, args.levels_down),
-                RESULTS,
+                results,
                 np=p,
                 exe=args.exe,
                 timeout=args.timeout,
@@ -145,10 +151,10 @@ def run_local(args):
 
 
 # ---------------------------------------------------------------------------
-def load_test(n):
+def load_test(n, tag=None):
     """{cores: results} for test n."""
     found = {}
-    for path in RESULTS.glob(f"test{n}_np*.json"):
+    for path in _results_dir(tag).glob(f"test{n}_np*.json"):
         p = int(path.stem.split("_np")[1])
         found[p] = json.loads(path.read_text())
     return dict(sorted(found.items()))
@@ -159,8 +165,8 @@ def phase_times(result):
     return {label: sum(t.get(s, {}).get("wall_max", 0.0) for s in sections) for label, sections in PHASES}
 
 
-def plot_test(n, formats):
-    data = load_test(n)
+def plot_test(n, formats, tag=None):
+    data = load_test(n, tag)
     if len(data) < 2:
         return print(f"  test {n}: fewer than two core counts, skipped")
     cores = np.array(list(data))
@@ -206,7 +212,7 @@ def mpl_null():
 
 def plot_all(args):
     for n in map(int, args.tests.split(",")):
-        plot_test(n, tuple(args.formats.split(",")))
+        plot_test(n, tuple(args.formats.split(",")), args.tag)
 
 
 # ---------------------------------------------------------------------------
@@ -216,6 +222,7 @@ def main():
     parser.add_argument("--tests", default="1,2,3,4,5")
     parser.add_argument("--cores", default=",".join(map(str, CORES)))
     parser.add_argument("--levels-down", type=int, default=0, help="lower every refinement level by this (0 = the paper's)")
+    parser.add_argument("--tag", default=None, help="keep results in results/scalability_<tag> instead of results/scalability (e.g. --tag smoke), so a smoke test cannot collide with or overwrite the real sweep")
     parser.add_argument("--exe", help="path of the coupled_diffusion executable")
     parser.add_argument("--formats", default="png,pdf")
     parser.add_argument("--force", action="store_true")

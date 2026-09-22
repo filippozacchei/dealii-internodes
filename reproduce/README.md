@@ -20,6 +20,9 @@ look for `build/examples/coupled_diffusion/coupled_diffusion`, or use
 `--exe` / `INTERNODES_EXE`. MPI runs are started with `mpirun -np N`; set
 `INTERNODES_LAUNCHER="srun -n {np}"` (for instance) to change that.
 
+On a cluster with no existing deal.II install, see `CLUSTER_SETUP.md` for a
+candi build recipe before running anything below.
+
 ## Figures
 
 | Paper figure | File(s) | Script |
@@ -84,8 +87,16 @@ the refinement levels of the paper's scaling figures (`p1r8-p1r7`, `p2r7-p4r5`,
 …). Core counts default to the paper's $48, 96, 192, 240, 288, 384, 480, 768$.
 
 ```bash
-# on the cluster: write parameter files and SLURM scripts, then submit
-python scalability.py prepare --account <account> --partition <partition> \
+# on the cluster: smoke test first (small, fast, kept apart via --tag so it
+# cannot collide with or overwrite the real sweep's output files)
+python scalability.py prepare --tests 1 --cores 48,96 --levels-down 5 --tag smoke \
+       --account <account> --partition <partition> \
+       --modules "module load <mpi> <dealii>" --time-limit 00:20:00
+bash results/scalability_smoke/submit_all.sh
+# check results/scalability_smoke/test1_np{48,96}.json exist and parse, then:
+
+# the real sweep (Table 4 sizes): write parameter files and SLURM scripts, then submit
+python scalability.py prepare --tests 1,2,3 --account <account> --partition <partition> \
        --modules "module load <mpi> <dealii>" --time-limit 04:00:00
 bash results/scalability/submit_all.sh
 
