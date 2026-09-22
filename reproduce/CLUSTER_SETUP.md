@@ -176,6 +176,28 @@ ScaLAPACK (p4est's own z-order partitioner is used, not METIS), so with
 these unset Trilinos should simply stop trying to enable them rather than
 needing them pointed anywhere.
 
+`unset` only fixes the current shell, though, and the leak comes back on
+every new login. **More robust:** comment out (don't delete, so it's a
+one-line revert if `lifex` itself is still needed on this cluster for
+something else) the line in `~/.bashrc` that sources the lifex environment,
+then log out and back in for a genuinely clean shell:
+
+```bash
+cp ~/.bashrc ~/.bashrc.bak-$(date +%Y%m%d)
+sed -i 's|^source .*/enable_lifex\.sh|# &|' ~/.bashrc
+tail -3 ~/.bashrc                              # confirm it's commented, not deleted
+# log out, log back in, then:
+env | grep -iE "_dir=|_lib|scalapack|parmetis|mumps" | sort    # should now show nothing
+                                                                 # from lifex-env
+```
+
+The rest of `.bashrc` (compiler/MPI/MKL/boost/hdf5/cmake modules) still
+loads normally on login, so nothing else about the environment changes --
+only the lifex-specific package paths stop leaking in. The `candi.cfg`
+`MKL=ON` edit from before is unaffected (it lives in the candi checkout, not
+the shell), so rerunning `./candi.sh ...` should pick up right where it
+left off.
+
 - `--prefix` is where everything gets installed; `-j` is the parallel build
   job count (match `--cpus-per-task` above). No `-j` given defaults to a
   small number, so pass it explicitly for a faster build.
