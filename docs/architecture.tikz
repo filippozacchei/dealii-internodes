@@ -1,0 +1,96 @@
+% Overview of the main components of the dealii-internodes library.
+% Adapted from the paper's Fig. 2 (figures/implementation/lib_comp.tikz),
+% with class names corrected to match this repository exactly:
+% SubProblem -> SubProblemBase, EllipticProblem -> SubProblemDiffusionReaction
+% (one representative PDE model; others are further SubProblemBase
+% subclasses), InterfaceRBFDoFHandler -> InterfaceDoFHandlerRBF.
+%
+% Requires: \usepackage{tikz} and
+%   \usetikzlibrary{arrows.meta,positioning,fit,backgrounds,calc}
+
+\definecolor{probDark}{HTML}{1F4E79}
+\definecolor{probLight}{HTML}{EAF1F8}
+\definecolor{ifaceDark}{HTML}{B36B00}
+\definecolor{ifaceLight}{HTML}{FBF0DE}
+\definecolor{solvDark}{HTML}{157A5D}
+\definecolor{solvLight}{HTML}{E4F5EF}
+
+\begin{tikzpicture}[
+  font=\normalsize,
+  >={Latex[length=2.2mm,width=1.6mm]},
+  every node/.style={align=center},
+  header/.style={font=\bfseries\small, text=white, inner sep=3pt, rounded corners=1pt, anchor=west},
+  cls/.style={draw=black!55, thick, fill=white, rounded corners=1pt,
+              minimum width=3.7cm, minimum height=0.85cm, font=\itshape\small,
+              inner sep=2pt},
+  role/.style={draw=black!70, thick, fill=black!85, text=white,
+               rounded corners=1pt, minimum width=3.7cm, minimum height=0.9cm,
+               font=\bfseries\small},
+  note/.style={font=\scriptsize, text=black!55},
+  lbl/.style={font=\scriptsize\itshape}
+]
+
+%% ================= Problem classes (left column) =================
+\node[role] (driver) {User application};
+\node[cls, draw=probDark, below=1.5cm of driver] (mdp) {MultiDomainProblem};
+\node[cls, draw=probDark, below=6mm of mdp] (sp) {SubProblemBase};
+\node[cls, draw=probDark, dashed, below=6mm of sp] (elliptic) {SubProblemDiffusionReaction};
+\node[note, below=1mm of elliptic] (moremodels) {(+ other PDE-specific specializations)};
+
+\begin{pgfonlayer}{background}
+\node[fill=probLight, draw=probDark, thick, rounded corners=2pt,
+      fit=(mdp)(sp)(elliptic)(moremodels), inner xsep=7mm, inner ysep=6mm] (probbg) {};
+\end{pgfonlayer}
+\node[header, fill=probDark] at ($(probbg.north west)+(3mm,0)$) {Problem components};
+
+%% ================= Interface handlers (top right) =================
+\node[cls, draw=ifaceDark, right=5.4cm of mdp] (idh) {InterfaceDoFHandler};
+\node[cls, draw=ifaceDark, below=14mm of idh] (irbf) {InterfaceDoFHandlerRBF};
+
+\begin{pgfonlayer}{background}
+\node[fill=ifaceLight, draw=ifaceDark, thick, rounded corners=2pt,
+      fit=(idh)(irbf), inner xsep=7mm, inner ysep=6mm] (ifbg) {};
+\end{pgfonlayer}
+\node[header, fill=ifaceDark] at ($(ifbg.north west)+(3mm,0)$) {Interface handlers};
+
+%% ================= Solver components (bottom right) =================
+\node[cls, draw=solvDark, below=32mm of irbf] (schur) {InternodesSchurComplement};
+\node[cls, draw=solvDark, below=6mm of schur] (prec) {SchurPreconditioner};
+
+\begin{pgfonlayer}{background}
+\node[fill=solvLight, draw=solvDark, thick, rounded corners=2pt,
+      fit=(schur)(prec), inner xsep=7mm, inner ysep=6mm] (sobg) {};
+\end{pgfonlayer}
+\node[header, fill=solvDark] at ($(sobg.north west)+(3mm,0)$) {Solver components};
+
+%% ================= Relations =================
+
+% driver -> MultiDomainProblem  (defines: user supplies geometry, BCs, and physics)
+\draw[->, thick] (driver.south) -- (mdp.north);
+\node[lbl, anchor=west, xshift=1mm] at ($(driver.south)!0.25!(mdp.north)$) {defines};
+
+% MultiDomainProblem -> SubProblem  (owns / association)
+\draw[->, thick] (mdp.south) -- (sp.north);
+\node[lbl, anchor=west, xshift=1mm] at ($(mdp.south)!0.5!(sp.north)$) {owns};
+
+% EllipticProblem -> SubProblem  (UML generalization: hollow triangle points to the parent)
+\draw[-{Triangle[open,length=3mm,width=2.4mm]}, thick] (elliptic.north) -- (sp.south);
+
+% MultiDomainProblem -> Interface handlers  ("builds transfer operators")
+% (jogs further out than t2 below, so its horizontal run sits clear of t2's trunk)
+\coordinate (t1) at ($(mdp.east)+(1.6,0)$);
+\coordinate (t1v) at (ifbg.west -| t1);
+\draw[->, thick] (mdp.east) -- (t1) -- (t1v) -- (ifbg.west);
+\node[lbl, anchor=north, yshift=-2mm] at ($(t1v)!0.5!(ifbg.west)$) {builds transfer\\operators};
+
+% MultiDomainProblem -> Solver components  ("interfaces with")
+% (jogs close to the group border, well left of t1's trunk and of the label above)
+\coordinate (t2) at ($(mdp.east)+(0.7,0)$);
+\coordinate (t2v) at (sobg.west -| t2);
+\draw[->, thick] (mdp.east) -- (t2) -- (t2v) -- (sobg.west);
+\node[lbl, anchor=north, yshift=-1mm] at ($(t2v)!0.5!(sobg.west)$) {interfaces with};
+
+% Interface handlers -> Solver components (label omitted: redundant with "builds transfer operators" above)
+\draw[->, thick, shorten >=1.5mm] (ifbg.south) -- (sobg.north);
+
+\end{tikzpicture}
