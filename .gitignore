@@ -1,4 +1,5 @@
 build/
+build*/
 CMakeCache.txt
 CMakeFiles/
 *.o

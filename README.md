@@ -192,6 +192,21 @@ last digit:
   `InterfaceDoFHandlerRBF`, `MultiDomainProblem`,
   `InternodesSchurComplement`, `SchurPreconditioner`); the PDE model is a
   subclass of `SubProblemBase` overriding `localBilinearForm()`.
+- **deal.II version portability.** Tested against both 9.7.0 and 9.8.0;
+  `ReferenceCell` became templated on dimension between them, so
+  `MeshHandler::is_hex`/`is_tet` use `auto` rather than spelling out
+  `std::vector<ReferenceCell>`, to stay correct across the `>= 9.5` range
+  this port claims. If a future deal.II version changes another such
+  type, expect a similar compile error naming the exact mismatch, not a
+  silent problem.
+- **MPI implementation matters, not just deal.II version.** Two bugs
+  (`timer_output()` doing an MPI collective in its destructor after
+  `MPI_Finalize` had already run; that same summary printing once per
+  rank instead of once total, from using the wrong `TimerOutput`
+  constructor overload) were both silent on OpenMPI and hard failures on
+  Intel MPI/MPICH. Local single-machine testing with OpenMPI is not a
+  substitute for testing on the MPI implementation reviewers or an HPC
+  cluster will actually use.
 
 ## Repository layout
 
@@ -207,9 +222,11 @@ reproduce/            Paper-reproduction configurations (HPC-scale)
 ## Status
 
 The hexahedral and tetrahedral code paths, serial and parallel, are validated
-as described above. The HPC-scale configurations in `reproduce/` have not yet
-been run at full size in this port. Only the diffusion–reaction model is
-provided; other PDEs need a new `SubProblemBase` subclass.
+as described above, on both a local machine (deal.II 9.7.0/9.8.0, OpenMPI)
+and an HPC cluster (CINECA Galileo100, deal.II 9.8.0, Intel MPI). The
+HPC-scale configurations in `reproduce/` have not yet been run at full size
+in this port. Only the diffusion–reaction model is provided; other PDEs need
+a new `SubProblemBase` subclass.
 
 ## License
 

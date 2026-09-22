@@ -376,6 +376,30 @@ a few seconds. If this works, `scalability.py prepare` (see
 `reproduce/README.md`, smoke test first) will work too — its batch scripts
 run the exact same command.
 
+**`salloc`/`srun` gotchas hit in practice on Galileo100**, roughly in the
+order they show up if you reuse a shell across multiple `salloc` calls in
+one session (e.g. one allocation for the candi build, a separate small one
+for this check):
+
+- `srun: error: Unable to confirm allocation for job <N>: Invalid job id` /
+  `Expired or invalid job <N>` -- the allocation from an earlier `salloc`
+  (e.g. `--time=02:00:00` for the candi build) ran out or was released,
+  but `SLURM_JOB_ID` from it is still in your shell. Just request a fresh
+  one.
+- `srun: error: Unable to create step for job <N>: More processors
+  requested than permitted` -- a *different* `salloc` earlier in the same
+  shell (e.g. `--cpus-per-task=48` for the build) leaves
+  `SLURM_CPUS_PER_TASK` (and `SLURM_TRES_PER_TASK`) set; a later, smaller
+  `salloc` doesn't clear it, so `srun` tries to multiply your new
+  allocation by the old per-task CPU count. Check with
+  `env | grep -i SLURM` and `unset SLURM_CPUS_PER_TASK
+  SLURM_TRES_PER_TASK` if so.
+- `unable to allocate shared memory` from Intel MPI's `MPIDU_shm_seg_commit`
+  at startup -- seen with a bare `salloc --ntasks=N` (no `--nodes`), which
+  can get split awkwardly across two nodes with a tiny default memory
+  grant. For a small interactive check, request a single whole node and
+  explicit memory instead: `salloc --nodes=1 --ntasks=N --mem=8G ...`.
+
 ## Notes
 
 - `scalability.py prepare --modules "..."` is a single line inserted
