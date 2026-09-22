@@ -157,6 +157,32 @@ sed -i 's|^# MKL_DIR=|MKL_DIR=$MKLROOT/lib/intel64|' candi.cfg    # $MKLROOT lef
 Then rerun the same `./candi.sh ...` command; candi checkpoints completed
 packages, so it resumes at Trilinos rather than rebuilding p4est.
 
+**If Kokkos (a Trilinos dependency) refuses to configure with "Compiler not
+supported ... Intel: not supported"**: recent Kokkos versions dropped
+support for the classic Intel compiler (`icc`/`icpc`) for C++17 entirely --
+only `IntelLLVM` (`icx`/`icpx`) or GCC >= 8.2.0 work. If a GCC module is
+also loaded (as in a typical CINECA `.bashrc`), Intel MPI conventionally
+ships GCC-wrapped compiler drivers (`mpicc`/`mpicxx`/`mpif90`) alongside the
+Intel-wrapped ones (`mpiicc`/`mpiicpc`/`mpiifort`) -- same MPI library, a
+different underlying compiler -- so this is usually a one-line swap rather
+than restarting with a different MPI module entirely:
+
+```bash
+which mpicc mpicxx mpif90
+mpicc -show                          # confirm it wraps gcc, not icc
+
+export CC=mpicc
+export CXX=mpicxx
+export FC=mpif90
+
+# CMake caches the detected compiler in the build directory from the failed
+# attempt(s); clearing it forces a fresh configure with the new compiler
+# (safe -- it's candi's scratch build dir, not the final install prefix):
+rm -rf $WORK/dealii-candi/tmp/build/trilinos-release-16-2-0
+```
+
+Then rerun the same `./candi.sh ...` command.
+
 **If Trilinos then fails on a *different* TPL you never asked for** (e.g.
 SCALAPACK, ParMETIS, MUMPS) **and the library paths in the log point outside
 your candi `--prefix`** (e.g. into a `lifex-env`-style directory): some
