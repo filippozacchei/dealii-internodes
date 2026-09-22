@@ -4,7 +4,16 @@ One-time setup for the scalability runs of `scalability.py` (see
 `reproduce/README.md`). Written for a generic SLURM cluster; adjust the
 module names to whatever your site provides (`module avail` to check).
 
-## 0. Check for an existing deal.II first (e.g. from a lifex install)
+**Recommended path: steps 1-4**, a full, from-scratch candi build with a
+generic compiler/MPI, exactly following the dependency list in the
+top-level README. This is what makes the numbers representative of what a
+reviewer with no site-specific knowledge -- and no pre-existing environment
+-- would get by following that README, so it's the one to use for anything
+that ends up reported. Step 0 below is only a quick, optional pre-check
+for wiring problems (does the code even compile/link/run at all), not a
+substitute for it.
+
+## 0 (optional, quick check only). An existing deal.II, e.g. from a lifex install
 
 If you already have `lifex` set up on this cluster, its environment script
 most likely already builds and exposes a deal.II with everything this port
@@ -64,17 +73,12 @@ Two outcomes:
   top-level README, to make sure an older deal.II hasn't silently changed
   any numerics.
 
-If any of this points to "rebuild", fall back to steps 1-4, and use the
-Intel oneAPI toolchain from your `.bashrc` (`intel/oneapi-2021`,
-`intelmpi/oneapi-2021`) rather than GNU+OpenMPI -- it's already proven to
-build this exact dependency stack on this cluster (that's what built the
-`lifex-env` you just listed), and `CC`/`CXX` are already set to the right
-MPI compiler wrappers once those modules are loaded (`export CC=${MPICC}`
-etc., as in your `.bashrc`). Use a **separate `--prefix`** from `lifex-env`
-so this build cannot disturb whatever still depends on it, e.g.
-`--prefix=$WORK/dealii-internodes-candi`, and load the modules directly
-rather than sourcing `enable_lifex.sh` (which would point `DEAL_II_DIR` back
-at the old 9.3.1 install).
+Either way, once this quick check has satisfied your curiosity, do the real
+build in steps 1-4 below for anything you intend to report -- in a
+**separate `--prefix`** from `lifex-env` so it cannot disturb whatever else
+still depends on that (e.g. `--prefix=$WORK/dealii-internodes-candi`), and
+loading modules directly rather than sourcing `enable_lifex.sh` (which
+would point `DEAL_II_DIR` back at the old 9.3.1 install).
 
 ## 1. Load a compiler and MPI, on a login/build node
 
@@ -90,6 +94,14 @@ module load gcc/<version> openmpi/<version> cmake         # or your site's names
 # first (flags vary by site -- check `sinfo`/`sacctmgr` or your site's docs):
 salloc --account=<account> --partition=<partition> --time=03:00:00 --ntasks=1 --cpus-per-task=8
 ```
+
+Prefer a generic GCC + OpenMPI/MPICH here over a vendor toolchain (e.g. Intel
+oneAPI), even if the latter is already set up in your own `.bashrc` and known
+to work on this cluster: the point of this build is to match exactly what
+the top-level README documents ("MPI (e.g. OpenMPI or MPICH)"), which is
+what an unfamiliar reviewer would actually have on hand. Fall back to a
+vendor toolchain only if no generic one is available on this cluster at
+all.
 
 Build on a filesystem with real disk quota (`$WORK`, `$SCRATCH`, `$CINECA_SCRATCH`,
 ...), not `$HOME`, which is usually small.
