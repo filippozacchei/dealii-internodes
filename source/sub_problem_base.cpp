@@ -44,43 +44,24 @@ namespace internodes
     const IndexSet interface_dofs_pre(
       DoFTools::extract_boundary_dofs(*dof_handler, ComponentMask(), interface_id));
 
-    // The numbering wanted is that of DoFRenumbering::
-    // compute_sort_selected_dofs_back() applied to the whole DoF range: the
-    // DoFs not on the interface get the numbers 0..n_unselected-1 and the
-    // interface ones the numbers n_unselected..n_dofs-1, both in ascending
-    // order of the old numbers. It is computed here directly for the DoFs
-    // owned by this rank, from the (small) set of interface DoFs of all
-    // ranks together, instead of through global-size arrays: the loop over
-    // all DoFs and all ranks' index sets that this replaces cost
-    // O(n_dofs * n_ranks) on every rank (52 s out of 64 s of a run on 768
-    // ranks) and two arrays of n_dofs entries each.
-    const types::global_dof_index n_dofs = dof_handler->n_dofs();
+    std::vector<bool>     selected_dofs(dof_handler->n_dofs());
+    std::vector<IndexSet> interface_dofs_total_pre =
+      Utilities::MPI::all_gather(mpi_comm, interface_dofs_pre);
+    for (unsigned int i = 0; i < dof_handler->n_dofs(); ++i)
+      for (const IndexSet &j : interface_dofs_total_pre)
+        if (j.is_element(i))
+          selected_dofs[i] = true;
 
-    IndexSet selected_dofs(n_dofs);
-    for (const IndexSet &set : Utilities::MPI::all_gather(mpi_comm, interface_dofs_pre))
-      selected_dofs.add_indices(set);
-    selected_dofs.compress();
-
-    IndexSet unselected_dofs(n_dofs);
-    unselected_dofs.add_range(0, n_dofs);
-    unselected_dofs.subtract_set(selected_dofs);
-    unselected_dofs.compress();
-
-    const types::global_dof_index n_unselected = unselected_dofs.n_elements();
-
-    std::vector<types::global_dof_index> new_numbers_owned;
-    new_numbers_owned.reserve(dof_handler->locally_owned_dofs().n_elements());
-    for (const types::global_dof_index i : dof_handler->locally_owned_dofs())
-      {
-        // Position of i among the interface DoFs, or invalid_dof_index if it
-        // is not one; otherwise its position among the others.
-        const types::global_dof_index position_selected =
-          selected_dofs.index_within_set(i);
-        new_numbers_owned.push_back(
-          position_selected != numbers::invalid_dof_index ?
-            n_unselected + position_selected :
-            unselected_dofs.index_within_set(i));
-      }
+    std::vector<types::global_dof_index> new_numbers(dof_handler->n_dofs());
+    std::vector<types::global_dof_index> new_numbers_owned(
+      dof_handler->locally_owned_dofs().n_elements());
+    DoFRenumbering::compute_sort_selected_dofs_back(new_numbers,
+                                                     *dof_handler,
+                                                     selected_dofs);
+    for (unsigned int i = 0; i < dof_handler->n_dofs(); ++i)
+      if (dof_handler->locally_owned_dofs().is_element(i))
+        new_numbers_owned[dof_handler->locally_owned_dofs().index_within_set(i)] =
+          new_numbers[i];
     dof_handler->renumber_dofs(new_numbers_owned);
     renumber_timer.stop();
 
@@ -124,7 +105,7 @@ namespace internodes
   }
 
   void
-  SubProblemBase::update_constraints()
+  SubProblemBase::assembly_global(bool intermediate)
   {
     constraints_dirichlet.clear();
     // Note: reinit() with the locally relevant DoFs is required by modern
@@ -138,20 +119,6 @@ namespace internodes
                                                 *fun,
                                                 constraints_dirichlet);
     constraints_dirichlet.close();
-  }
-
-  void
-  SubProblemBase::set_zero_rhs()
-  {
-    rhs       = 0.;
-    rhs_in    = 0.;
-    rhs_gamma = 0.;
-  }
-
-  void
-  SubProblemBase::assembly_global(bool intermediate)
-  {
-    update_constraints();
 
     this->assembly(intermediate);
 

@@ -132,22 +132,9 @@ The phases are those of the paper: assembly of the interpolation operators
 operators (`Step 0`), and Steps 1–4 of the algorithm, each as the maximum
 over the ranks of its accumulated wall time. The speed-up is
 $T(p_0)/T(p)$ with $p_0$ the smallest core count, and the ideal curve in the
-time plot is normalised to 1 s at $p_0$, as in the paper.
-
-The subdomain matrices are assembled once per solve. (The original algorithm
-assembled them three times, once with the real data and twice more around the
-homogeneous Step 3, although the matrices do not depend on the data; results
-of earlier versions of the code, with "Assembly Internal Operators" the sum
-over the three, are not comparable with newer ones.)
-
-`--set "Section/Name=value"` (repeatable) overrides a parameter of the test
-files, e.g. `--set "Solver/Subdomain solve reduction=1e-8"` for a study of the
-inner-solver tolerances (keep such a study apart with its own `--tag`).
-
-`--repeats R` runs every case R times (`testN_npP_rK.*`) and `plot` averages
-the times, printing the run-to-run spread; `plot --with-total` adds the
-wall-clock time of the whole program (mesh, setup, solve), which the phases of
-the paper do not include and which shows problems that they hide.
+time plot is normalised to 1 s at $p_0$, as in the paper. Note that the
+algorithm assembles the subdomain matrices three times per solve, and the
+"Assembly Internal Operators" time is the sum over the three.
 
 Tests 4 and 5 (Geometry B, tetrahedra) use, until the Gmsh meshes are
 available, the hexahedral half shell split into tetrahedra with placeholder

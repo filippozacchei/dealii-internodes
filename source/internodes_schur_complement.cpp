@@ -132,13 +132,6 @@ namespace internodes
     // set on `problem` -- see paper Eq. \eqref{eq:localsystem_lambda}: the
     // Step-3 matrix-vector product uses A_{k,k}u = -A_{k,Gamma_k}l, with
     // *zero* forcing, unlike Steps 1/4 which use the real data).
-    //
-    // The matrices do not depend on the data (only the right-hand sides and
-    // the values of the Dirichlet constraints do), so they are not assembled
-    // again: the constraints are rebuilt with the zero data and the
-    // right-hand sides are set to zero, which is exactly what a zero-data
-    // assembly produces. (The algorithm used to assemble the matrices three
-    // times per solve, once here and once more to restore the data below.)
     const std::shared_ptr<Function<dim>> rhs_real       = problem->master->forcing_term;
     const std::shared_ptr<Function<dim>> dirichlet_real = problem->master->fun;
     const std::shared_ptr<Function<dim>> neumann_real   = problem->master->fun_neumann;
@@ -147,23 +140,8 @@ namespace internodes
     const auto null_dirichlet = std::make_shared<Functions::ZeroFunction<dim>>();
     const auto null_neumann = std::make_shared<Functions::ZeroFunction<dim>>();
 
-    // Right-hand sides with the real data, put back at the end.
-    const TrilinosWrappers::MPI::BlockVector master_rhs_real       = problem->master->rhs;
-    const TrilinosWrappers::MPI::Vector      master_rhs_in_real    = problem->master->rhs_in;
-    const TrilinosWrappers::MPI::Vector      master_rhs_gamma_real = problem->master->rhs_gamma;
-    const TrilinosWrappers::MPI::BlockVector slave_rhs_real        = problem->slave->rhs;
-    const TrilinosWrappers::MPI::Vector      slave_rhs_in_real     = problem->slave->rhs_in;
-    const TrilinosWrappers::MPI::Vector      slave_rhs_gamma_real  = problem->slave->rhs_gamma;
-
-    {
-      TimerOutput::Scope timer_section(timer_output(),
-                                       "Step 0: homogeneous-phase data update");
-      problem->set_data(null_rhs, null_dirichlet, null_neumann);
-      problem->master->update_constraints();
-      problem->slave->update_constraints();
-      problem->master->set_zero_rhs();
-      problem->slave->set_zero_rhs();
-    }
+    problem->set_data(null_rhs, null_dirichlet, null_neumann);
+    this->step0(true);
 
     TrilinosWrappers::MPI::Vector lambda_(
       problem->master->interface_dofHandler_ptr->interface_dofs_owned());
@@ -185,21 +163,10 @@ namespace internodes
     sol_omega_master.add(1.0, uf_master, 1.0, ulambda_master);
     sol_omega_slave.add(1.0, uf_slave, 1.0, ulambda_slave);
 
-    // Restore the real problem data, constraints and right-hand sides,
-    // leaving `problem` in the same state solve() found it in.
-    {
-      TimerOutput::Scope timer_section(timer_output(),
-                                       "Step 0: homogeneous-phase data update");
-      problem->set_data(rhs_real, dirichlet_real, neumann_real);
-      problem->master->update_constraints();
-      problem->slave->update_constraints();
-      problem->master->rhs       = master_rhs_real;
-      problem->master->rhs_in    = master_rhs_in_real;
-      problem->master->rhs_gamma = master_rhs_gamma_real;
-      problem->slave->rhs        = slave_rhs_real;
-      problem->slave->rhs_in     = slave_rhs_in_real;
-      problem->slave->rhs_gamma  = slave_rhs_gamma_real;
-    }
+    // Restore the real problem data and reassemble, leaving `problem` in
+    // the same state solve() found it in.
+    problem->set_data(rhs_real, dirichlet_real, neumann_real);
+    this->step0();
   }
 
   void
@@ -260,16 +227,14 @@ namespace internodes
   {
     step_rhs(pb_rhs, lambda_, subPb->rhs_in, subPb->M_in_gamma());
 
-    // The default tolerances (InnerSolverTolerances) are near machine
-    // precision, far tighter than the outer GMRES's 1e-8: they can be
-    // relaxed through MultiDomainProblem::set_solver_tolerances().
-    const CGTolerance &tolerances = problem->tolerances.subdomain;
-    const unsigned int max_iterations = 1000000;
-    ReductionControl control(max_iterations,
-                             tolerances.tolerance,
-                             tolerances.reduction,
-                             false,
-                             false);
+    // Same near-machine-precision tolerance used throughout this codebase
+    // for local subdomain solves; see the port's README for a note on
+    // whether this is unnecessarily tight relative to the outer GMRES's
+    // 1e-8 relative-residual tolerance -- ported as-is here, not changed.
+    const double       desired_tolerance = 1e-13;
+    const double       desired_reduction = 1e-11;
+    const unsigned int max_iterations    = 1000000;
+    ReductionControl control(max_iterations, desired_tolerance, desired_reduction, false, false);
 
     SolverCG<TrilinosWrappers::MPI::Vector> linear_solver_subproblem(control);
     step_linear_solver_subproblem(linear_solver_subproblem,
@@ -277,7 +242,6 @@ namespace internodes
                                   solution_,
                                   pb_rhs,
                                   subPb->preconditioner_in_in);
-    record_cg_solve("subdomain", control.last_step());
 
     subPb->apply_dirichlet_to_internal(solution_);
   }

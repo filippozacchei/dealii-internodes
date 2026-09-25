@@ -35,11 +35,9 @@ namespace internodes
     const BoundingBox<dim> local_box(std::make_pair(point_min, point_max));
 
     // Broad-phase query: all support points whose bounding box intersects
-    // the (square) box of the given radius around `point`. (No reserve() of
-    // the number of support points: the answer is a few dozen points, and
-    // reserving room for all of them -- megabytes -- on every query, twice per
-    // interface DoF, was pure allocation cost.)
+    // the (square) box of the given radius around `point`.
     std::vector<std::pair<Point<dim>, unsigned int>> result_n;
+    result_n.reserve(support_points_global.size());
     rtree.query(bgi::intersects(local_box), std::back_inserter(result_n));
 
     // Narrow-phase check: the broad-phase box query over-selects points in
