@@ -87,25 +87,58 @@ the refinement levels of the paper's scaling figures (`p1r8-p1r7`, `p2r7-p4r5`,
 …). Core counts default to the paper's $48, 96, 192, 240, 288, 384, 480, 768$.
 
 ```bash
-# on the cluster: smoke test first (small, fast, kept apart via --tag so it
-# cannot collide with or overwrite the real sweep's output files)
-python scalability.py prepare --tests 1 --cores 48,96 --levels-down 5 --tag smoke \
-       --account <account> --partition <partition> \
-       --modules "module load <mpi> <dealii>" --time-limit 00:20:00
-bash results/scalability_smoke/submit_all.sh
-# check results/scalability_smoke/test1_np{48,96}.json exist and parse, then:
+# on the cluster (`prepare` and `run` need nothing but a Python 3; only `plot`
+# needs numpy/matplotlib, so plot on a laptop after copying the .json files back).
+# Submit from a fresh login shell: `env | grep SLURM` should print nothing
+# (a leftover SLURM_CPUS_PER_TASK from an earlier salloc breaks srun).
+# --modules: the line(s) that load the compiler/MPI/libraries deal.II was built
+# with, e.g. --modules "$(grep '^module load' ~/.bashrc)".
 
-# the real sweep (Table 4 sizes): write parameter files and SLURM scripts, then submit
-python scalability.py prepare --tests 1,2,3 --account <account> --partition <partition> \
-       --modules "module load <mpi> <dealii>" --time-limit 04:00:00
+# 1. smoke test (small and fast; --tag keeps it apart from the real sweep's
+#    files). Levels lowered by 3 keep every mesh non-degenerate on 96 ranks.
+python3 scalability.py prepare --tests 1,2,3 --cores 48,96 --levels-down 3 --tag smoke \
+       --account <account> --partition <partition> \
+       --modules "module load <mpi> <libraries>" --time-limit 00:20:00
+bash results/scalability_smoke/submit_all.sh
+# check results/scalability_smoke/test{1,2,3}_np{48,96}.json exist and parse
+
+# 2. the real sweep (Table 4 sizes), smallest core count first to learn the
+#    run time and memory (sacct -j <id> --format=JobID,Elapsed,MaxRSS,State)
+python3 scalability.py prepare --tests 1,2,3 --cores 48 --account <account> \
+       --partition <partition> --modules "module load <mpi> <libraries>" --time-limit 08:00:00
+bash results/scalability/submit_all.sh
+# ... then the remaining core counts (write new scripts, resubmit):
+python3 scalability.py prepare --tests 1,2,3 --cores 96,192,240,288,384,480,768 \
+       --account <account> --partition <partition> \
+       --modules "module load <mpi> <libraries>" --time-limit 04:00:00
 bash results/scalability/submit_all.sh
 
-# afterwards (results/scalability/testN_npP.json exist)
+# 3. copy results/scalability/*.json back (rsync/scp) and plot on a laptop
 python scalability.py plot
 
 # laptop check of the pipeline, everything scaled down (timings are meaningless)
 python scalability.py run --tests 1,2 --cores 1,2,4 --levels-down 4
 python scalability.py plot --tests 1,2
+```
+
+The accuracy figures' finest levels (5 and 6) can be run on one node with a
+batch script like this (errors do not depend on the machine or the rank
+count; the CPU-time figure does, so run all levels on the same machine):
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=accuracy
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=48
+#SBATCH --time=12:00:00
+#SBATCH --account=<account>
+#SBATCH --partition=<partition>
+#SBATCH --output=accuracy.log
+unset SLURM_CPUS_PER_TASK SLURM_TRES_PER_TASK
+module load <mpi> <libraries>
+export INTERNODES_LAUNCHER="srun -n {np}"
+cd <path>/dealii-internodes/reproduce
+python3 accuracy.py run --max-level 6 --np 48 --timeout 28800
 ```
 
 The phases are those of the paper: assembly of the interpolation operators
@@ -134,6 +167,6 @@ Table 4.
 
 They can also be run directly, `mpirun -np N ./coupled_diffusion reproduce/test1.prm`.
 Tests 1–3 reproduce the master DoF counts of Table 4 exactly ($257^3$).
-Geometry-A meshes are built like lifex's: a coarse cell refined globally on the
-distributed mesh; Geometry-B meshes come from deal.II's half hyper-shell split
-into tetrahedra, since the paper's Gmsh meshes are not available here.
+Geometry-A meshes are a single coarse cell per subdomain, refined globally on
+the distributed mesh; Geometry-B meshes come from deal.II's half hyper-shell
+split into tetrahedra, since the paper's Gmsh meshes are not available here.

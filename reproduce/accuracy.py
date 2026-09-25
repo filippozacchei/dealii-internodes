@@ -34,11 +34,16 @@ import json
 import sys
 from pathlib import Path
 
-import numpy as np
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import style  # noqa: E402
+# numpy and matplotlib are only needed by `plot`; `run` uses the standard
+# library only, so it works on a bare cluster Python.
+try:
+    import numpy as np
+    import style
+except ImportError:
+    np = style = None
+
 from lib import ROOT, box_case, run_case  # noqa: E402
 
 RESULTS = ROOT / "results" / "accuracy"
@@ -366,6 +371,8 @@ def main():
     parser.add_argument("--paper-labels", action="store_true", help="label the x axis of the non-conforming figures h_2, as the paper does")
     args = parser.parse_args()
 
+    if args.command in ("plot", "all") and style is None:
+        sys.exit("plot needs numpy and matplotlib: pip install -r requirements.txt")
     if args.command in ("run", "all"):
         run_all(args)
     if args.command in ("plot", "all"):

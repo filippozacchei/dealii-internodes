@@ -30,11 +30,16 @@ import json
 import sys
 from pathlib import Path
 
-import numpy as np
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import style  # noqa: E402
+# numpy and matplotlib are only needed by `plot`; `prepare` and `run` use the
+# standard library only, so they work on a bare cluster Python.
+try:
+    import numpy as np
+    import style
+except ImportError:
+    np = style = None
+
 from lib import ROOT, read_prm, run_case  # noqa: E402
 
 def _results_dir(tag=None):
@@ -68,16 +73,17 @@ PHASES = [
     ("Step 4", ("Step 4: u^(lambda) on master/slave",)),
 ]
 
-# Line styles of the paper's figures.
-LOOK = {
-    "Ideal": dict(color=style.GRAY, linestyle="--", linewidth=1.6),
-    "Assembly Interpolation Operators": dict(color=style.ORANGE, marker="s", linestyle="-."),
-    "Assembly Internal Operators": dict(color="black", marker="o", linestyle="-"),
-    "Step 1": dict(color=style.BLUE, marker=">", linestyle="--"),
-    "Step 2": dict(color=style.ORANGE, marker="^", linestyle=":"),
-    "Step 3": dict(color=style.GREEN, marker="s", linestyle="-."),
-    "Step 4": dict(color=style.PURPLE, marker="D", linestyle="--"),
-}
+def _look():
+    """Line styles of the paper's figures."""
+    return {
+        "Ideal": dict(color=style.GRAY, linestyle="--", linewidth=1.6),
+        "Assembly Interpolation Operators": dict(color=style.ORANGE, marker="s", linestyle="-."),
+        "Assembly Internal Operators": dict(color="black", marker="o", linestyle="-"),
+        "Step 1": dict(color=style.BLUE, marker=">", linestyle="--"),
+        "Step 2": dict(color=style.ORANGE, marker="^", linestyle=":"),
+        "Step 3": dict(color=style.GREEN, marker="s", linestyle="-."),
+        "Step 4": dict(color=style.PURPLE, marker="D", linestyle="--"),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +112,11 @@ def job_script(name, np_, prm, args, results):
         lines.append(f"#SBATCH --account={args.account}")
     if args.partition:
         lines.append(f"#SBATCH --partition={args.partition}")
+    # sbatch passes on the submitting shell's environment; a SLURM_CPUS_PER_TASK
+    # left over from an earlier `salloc --cpus-per-task=...` there would make
+    # srun ask for (ntasks x that) cores ("More processors requested than
+    # permitted"), so drop it.
+    lines.append("unset SLURM_CPUS_PER_TASK SLURM_TRES_PER_TASK")
     if args.modules:
         lines.append(args.modules)
     lines.append(f"{args.launcher} {args.exe} {prm}")
@@ -169,6 +180,7 @@ def plot_test(n, formats, tag=None):
     data = load_test(n, tag)
     if len(data) < 2:
         return print(f"  test {n}: fewer than two core counts, skipped")
+    LOOK = _look()
     cores = np.array(list(data))
     p0 = cores[0]
     times = {label: np.array([phase_times(r)[label] for r in data.values()]) for label, _ in PHASES}
@@ -242,6 +254,8 @@ def main():
     elif args.command == "run":
         run_local(args)
     else:
+        if style is None:
+            sys.exit("plot needs numpy and matplotlib: pip install -r requirements.txt")
         plot_all(args)
 
 
