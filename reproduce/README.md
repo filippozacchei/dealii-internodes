@@ -88,93 +88,43 @@ the refinement levels of the paper's scaling figures (`p1r8-p1r7`, `p2r7-p4r5`,
 
 ```bash
 # on the cluster (`prepare` and `run` need nothing but a Python 3; only `plot`
-# needs numpy/matplotlib, so plot on a laptop after copying the .json files back).
+# needs numpy/matplotlib, so plot on a laptop after pulling the results).
 # Submit from a fresh login shell: `env | grep SLURM` should print nothing
 # (a leftover SLURM_CPUS_PER_TASK from an earlier salloc breaks srun).
 # --modules: the line(s) that load the compiler/MPI/libraries deal.II was built
 # with, e.g. --modules "$(grep '^module load' ~/.bashrc)".
+# --tag galileo100...: results go to results/scalability_<tag>/, the only
+# directories git does not ignore, so they can be committed ("Getting results
+# back" below).
 
-# 1. smoke test (small and fast; --tag keeps it apart from the real sweep's
-#    files). Levels lowered by 3 keep every mesh non-degenerate on 96 ranks.
-python3 scalability.py prepare --tests 1,2,3 --cores 48,96 --levels-down 3 --tag smoke \
+# 1. smoke test (small and fast). Levels lowered by 3 keep every mesh
+#    non-degenerate on 96 ranks.
+python3 scalability.py prepare --tests 1,2,3 --cores 48,96 --levels-down 3 --tag galileo100-smoke \
        --account <account> --partition <partition> \
        --modules "module load <mpi> <libraries>" --time-limit 00:20:00
-bash results/scalability_smoke/submit_all.sh
-# check results/scalability_smoke/test{1,2,3}_np{48,96}.json exist and parse
+bash results/scalability_galileo100-smoke/submit_all.sh
+# check results/scalability_galileo100-smoke/test{1,2,3}_np{48,96}.json exist and parse
 
 # 2. the real sweep (Table 4 sizes), smallest core count first to learn the
 #    run time and memory (sacct -j <id> --format=JobID,Elapsed,MaxRSS,State)
-python3 scalability.py prepare --tests 1,2,3 --cores 48 --account <account> \
-       --partition <partition> --modules "module load <mpi> <libraries>" --time-limit 08:00:00
-bash results/scalability/submit_all.sh
+python3 scalability.py prepare --tests 1,2,3 --cores 48 --tag galileo100 \
+       --account <account> --partition <partition> \
+       --modules "module load <mpi> <libraries>" --time-limit 08:00:00
+bash results/scalability_galileo100/submit_all.sh
 # ... then the remaining core counts (write new scripts, resubmit):
-python3 scalability.py prepare --tests 1,2,3 --cores 96,192,240,288,384,480,768 \
+python3 scalability.py prepare --tests 1,2,3 --cores 96,192,240,288,384,480,768 --tag galileo100 \
        --account <account> --partition <partition> \
        --modules "module load <mpi> <libraries>" --time-limit 04:00:00
-bash results/scalability/submit_all.sh
+bash results/scalability_galileo100/submit_all.sh
 
-# 3. bring the results back through a git branch (see "Getting results back"
-#    below), then plot on a laptop
-python scalability.py plot
+# 3. once the jobs have finished: commit and push from the cluster, pull on a
+#    laptop ("Getting results back"), then plot there
+python scalability.py plot --tag galileo100
 
-# laptop check of the pipeline, everything scaled down (timings are meaningless)
+# laptop check of the pipeline, everything scaled down (timings are meaningless;
+# untagged, so git ignores the results)
 python scalability.py run --tests 1,2 --cores 1,2,4 --levels-down 4
 python scalability.py plot --tests 1,2
-```
-
-### Getting results back
-
-The result files are small (JSON, parameter files, logs), so a dedicated
-branch is the simplest way to bring them from the cluster to a laptop, and it
-records which code version produced them. `results/` is git-ignored on
-`main`, hence `-f`. The cluster needs push access to the repository: a GitHub
-personal access token or an SSH key, and `git config user.name` /
-`user.email`.
-
-Use a second clone for this rather than switching branches in the working
-repository: files tracked on the results branch but not on `main` would be
-deleted from disk by `git checkout main`.
-
-```bash
-# on the cluster: a second clone only for results (create it once)
-git clone https://github.com/filippozacchei/dealii-internodes.git $WORK/internodes-results
-cd $WORK/internodes-results
-git checkout -b results-galileo100
-
-# ... and every time results should be sent back
-cd $WORK/internodes-results
-mkdir -p reproduce/results && cp -r $WORK/dealii-internodes/reproduce/results/. reproduce/results/
-git add -f reproduce/results
-git commit -m "Galileo100 results, code at $(git -C $WORK/dealii-internodes rev-parse --short HEAD)"
-git push -u origin results-galileo100
-
-# on the laptop: take the files without switching branches
-git fetch origin results-galileo100
-git checkout FETCH_HEAD -- reproduce/results
-git reset -q reproduce/results               # unstage; the files stay (ignored)
-```
-
-Files with the same name (e.g. accuracy cases already run locally) are
-overwritten by the cluster's.
-
-The accuracy figures' finest levels (5 and 6) can be run on one node with a
-batch script like this (errors do not depend on the machine or the rank
-count; the CPU-time figure does, so run all levels on the same machine):
-
-```bash
-#!/bin/bash
-#SBATCH --job-name=accuracy
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=48
-#SBATCH --time=12:00:00
-#SBATCH --account=<account>
-#SBATCH --partition=<partition>
-#SBATCH --output=accuracy.log
-unset SLURM_CPUS_PER_TASK SLURM_TRES_PER_TASK
-module load <mpi> <libraries>
-export INTERNODES_LAUNCHER="srun -n {np}"
-cd <path>/dealii-internodes/reproduce
-python3 accuracy.py run --max-level 6 --np 48 --timeout 28800
 ```
 
 The phases are those of the paper: assembly of the interpolation operators
@@ -190,6 +140,57 @@ Tests 4 and 5 (Geometry B, tetrahedra) use, until the Gmsh meshes are
 available, the hexahedral half shell split into tetrahedra with placeholder
 refinement levels (`Shell refinement`), so their DoF counts differ from
 Table 4.
+
+### Accuracy figures on the cluster
+
+The finest levels (5 and 6) can be run on one node with a batch script like
+this (errors do not depend on the machine or the rank count; the CPU-time
+figure does, so run all levels on the same machine):
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=accuracy
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=48
+#SBATCH --time=12:00:00
+#SBATCH --account=<account>
+#SBATCH --partition=<partition>
+#SBATCH --output=accuracy.log
+unset SLURM_CPUS_PER_TASK SLURM_TRES_PER_TASK
+module load <mpi> <libraries>
+export INTERNODES_LAUNCHER="srun -n {np}"
+cd <path>/dealii-internodes/reproduce
+python3 accuracy.py run --max-level 6 --np 48 --timeout 28800 --tag galileo100
+```
+
+The results are in `results/accuracy_galileo100/`; plot them with
+`python accuracy.py plot --tag galileo100`.
+
+### Getting results back
+
+The result files are small (JSON, parameter files, logs), so the simplest way
+to bring them from the cluster to a laptop is to commit them. Directories
+whose name contains `galileo100` (from `--tag galileo100...`) are the only
+ones under `results/` that `.gitignore` lets through, so scratch runs on a
+laptop are never picked up by mistake, and pulling cannot collide with them.
+The commit follows the code commit that produced the results, which records
+which version of the code that was.
+
+```bash
+# on the cluster, in the working repository, once the jobs have finished
+git add reproduce/results/*galileo100*
+git commit -m "Galileo100 results"
+git pull --rebase && git push
+
+# on the laptop
+git pull
+python scalability.py plot --tag galileo100       # in reproduce/
+python accuracy.py plot --tag galileo100
+```
+
+Pushing from the cluster needs credentials (a GitHub personal access token
+used as the password, or an SSH key) and `git config user.name` /
+`user.email`.
 
 ## Configuration files
 

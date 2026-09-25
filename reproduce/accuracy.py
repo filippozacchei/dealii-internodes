@@ -46,7 +46,11 @@ except ImportError:
 
 from lib import ROOT, box_case, run_case  # noqa: E402
 
-RESULTS = ROOT / "results" / "accuracy"
+def _results_dir(tag=None):
+    return ROOT / "results" / (f"accuracy_{tag}" if tag else "accuracy")
+
+
+RESULTS = _results_dir()  # set from --tag in main()
 FIGURES = ROOT / "figures" / "accuracy"
 
 RADIUS_FACTORS = (1, 2, 5, 10)
@@ -369,7 +373,11 @@ def main():
     parser.add_argument("--retry-failed", action="store_true", help="rerun cases that failed or timed out before")
     parser.add_argument("--formats", default="pdf,png", help="output formats (default pdf,png; the paper uses eps)")
     parser.add_argument("--paper-labels", action="store_true", help="label the x axis of the non-conforming figures h_2, as the paper does")
+    parser.add_argument("--tag", default=None, help="keep results in results/accuracy_<tag> instead of results/accuracy (e.g. --tag galileo100 for runs to be committed; see the README)")
     args = parser.parse_args()
+
+    global RESULTS
+    RESULTS = _results_dir(args.tag)
 
     if args.command in ("plot", "all") and style is None:
         sys.exit("plot needs numpy and matplotlib: pip install -r requirements.txt")
