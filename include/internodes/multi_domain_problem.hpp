@@ -55,6 +55,23 @@ namespace internodes
     interpolateResidual(TrilinosWrappers::MPI::Vector       &dst,
                         const TrilinosWrappers::MPI::Vector &src) const;
 
+    /// Sets the tolerances of the inner CG solves (see
+    /// InnerSolverTolerances; the defaults are those of the paper's runs).
+    void
+    set_solver_tolerances(const InnerSolverTolerances &new_tolerances)
+    {
+      tolerances = new_tolerances;
+      master->interface_dofHandler_ptr->set_interpolation_tolerance(
+        tolerances.rbf.tolerance, tolerances.rbf.reduction);
+      slave->interface_dofHandler_ptr->set_interpolation_tolerance(
+        tolerances.rbf.tolerance, tolerances.rbf.reduction);
+    }
+
+    /// Tolerances of the inner CG solves, read by InternodesSchurComplement,
+    /// SchurPreconditioner and interpolateResidual(); change them through
+    /// set_solver_tolerances().
+    InnerSolverTolerances tolerances;
+
     std::shared_ptr<SubProblemBase> master;
     std::shared_ptr<SubProblemBase> slave;
 

@@ -170,6 +170,9 @@ struct Parameters
   bool tets_slave  = false;
   bool use_schur_preconditioner = true;
 
+  /// Tolerances of the inner CG solves (defaults: the paper's runs).
+  InnerSolverTolerances inner_tolerances;
+
   /// "coupled": the INTERNODES solve of the two subdomains. "monolithic": a
   /// single-domain reference solve on the union of the two boxes (adjacent_
   /// boxes only), at the master's resolution.
@@ -317,6 +320,32 @@ struct Parameters
                         "Use the Dirichlet-Neumann-type preconditioner in "
                         "the interface GMRES solve; false gives the "
                         "unpreconditioned iteration counts.");
+
+      // Inner CG solves: each stops at an absolute residual tolerance or a
+      // reduction relative to the initial residual, whichever comes first.
+      // The defaults are those of the paper's runs, far tighter than the
+      // GMRES tolerance; relaxing them trades accuracy of the inner solves
+      // for speed (the CG iteration counts are in the results file).
+      prm.declare_entry("Subdomain solve tolerance", "1e-13", Patterns::Double(0),
+                        "CG on the internal block of each subdomain (Steps 1 and 4 "
+                        "and every Schur matrix-vector product): absolute tolerance.");
+      prm.declare_entry("Subdomain solve reduction", "1e-11", Patterns::Double(0),
+                        "Same solves: reduction of the initial residual.");
+      prm.declare_entry("Preconditioner solve tolerance", "1e-13", Patterns::Double(0),
+                        "CG on the auxiliary problem of the Schur preconditioner: "
+                        "absolute tolerance.");
+      prm.declare_entry("Preconditioner solve reduction", "1e-11", Patterns::Double(0),
+                        "Same solves: reduction of the initial residual.");
+      prm.declare_entry("Interface mass solve tolerance", "1e-13", Patterns::Double(0),
+                        "CG on the slave interface mass matrix (residual transfer): "
+                        "absolute tolerance.");
+      prm.declare_entry("Interface mass solve reduction", "1e-11", Patterns::Double(0),
+                        "Same solves: reduction of the initial residual.");
+      prm.declare_entry("RBF solve tolerance", "1e-12", Patterns::Double(0),
+                        "CG on the RBF matrix in every RL-RBF interpolation: "
+                        "absolute tolerance.");
+      prm.declare_entry("RBF solve reduction", "1e-10", Patterns::Double(0),
+                        "Same solves: reduction of the initial residual.");
     }
     prm.leave_subsection();
 
@@ -388,6 +417,19 @@ struct Parameters
       gmres_right_preconditioning = prm.get_bool("GMRES right preconditioning");
       gmres_basis_size            = prm.get_integer("GMRES basis size");
       use_schur_preconditioner = prm.get_bool("Use Schur preconditioner");
+
+      inner_tolerances.subdomain.tolerance = prm.get_double("Subdomain solve tolerance");
+      inner_tolerances.subdomain.reduction = prm.get_double("Subdomain solve reduction");
+      inner_tolerances.preconditioner.tolerance =
+        prm.get_double("Preconditioner solve tolerance");
+      inner_tolerances.preconditioner.reduction =
+        prm.get_double("Preconditioner solve reduction");
+      inner_tolerances.interface_mass.tolerance =
+        prm.get_double("Interface mass solve tolerance");
+      inner_tolerances.interface_mass.reduction =
+        prm.get_double("Interface mass solve reduction");
+      inner_tolerances.rbf.tolerance = prm.get_double("RBF solve tolerance");
+      inner_tolerances.rbf.reduction = prm.get_double("RBF solve reduction");
     }
     prm.leave_subsection();
 
@@ -495,6 +537,15 @@ build_half_hyper_shells(MeshHandler        &mesh,
 // Reports (JSON) and single-domain reference solve
 // =========================================================================
 
+/// MPI_Wtime() at the start of main(), for the whole-program time written to
+/// the results file.
+double &
+program_start_time()
+{
+  static double start = 0.;
+  return start;
+}
+
 /// Sizes and error of one subdomain (or of the single-domain reference).
 struct SubdomainReport
 {
@@ -572,6 +623,11 @@ write_results(const Parameters                                              &par
     return;
 
   const std::string timings = timings_json(); // collective: call on all ranks
+  // Wall-clock time of the whole program up to here (mesh, setup, solve,
+  // errors), maximum over the ranks: the per-phase timings do not add up to
+  // the run time of a user, this does. Collective as well.
+  const double total_wall =
+    Utilities::MPI::max(MPI_Wtime() - program_start_time(), mpi_comm);
   if (Utilities::MPI::this_mpi_process(mpi_comm) != 0)
     return;
 
@@ -585,6 +641,7 @@ write_results(const Parameters                                              &par
                                                                  "half_hyper_shells")
       << "\",\n";
   out << "  \"n_mpi_ranks\": " << Utilities::MPI::n_mpi_processes(mpi_comm) << ",\n";
+  out << "  \"total_wall\": " << total_wall << ",\n";
   out << "  \"interpolation\": \""
       << ((parameters.rbf_radius > 0. || parameters.rbf_radius_factor > 0.) ? "rbf" :
                                                                               "lagrange")
@@ -594,6 +651,27 @@ write_results(const Parameters                                              &par
       << (parameters.use_schur_preconditioner ? "true" : "false") << ",\n";
   out << "  \"gmres_iterations\": " << n_iterations << ",\n";
   out << "  \"broken_H1_error\": " << total_error << ",\n";
+  {
+    // Tolerances of the inner CG solves, and how many solves/iterations each
+    // kind took (both give the cost of an inner solve).
+    const InnerSolverTolerances &t = parameters.inner_tolerances;
+    const auto pair_json = [](const CGTolerance &c) {
+      std::ostringstream s;
+      s.precision(12);
+      s << "[" << c.tolerance << ", " << c.reduction << "]";
+      return s.str();
+    };
+    out << "  \"inner_tolerances\": {\"subdomain\": " << pair_json(t.subdomain)
+        << ", \"preconditioner\": " << pair_json(t.preconditioner)
+        << ", \"interface_mass\": " << pair_json(t.interface_mass)
+        << ", \"rbf\": " << pair_json(t.rbf) << "},\n";
+    out << "  \"cg\": {";
+    unsigned int k = 0;
+    for (const auto &[kind, s] : cg_statistics())
+      out << (k++ ? ", " : "") << "\"" << kind << "\": {\"solves\": " << s.n_solves
+          << ", \"iterations\": " << s.n_iterations << "}";
+    out << "},\n";
+  }
   out << "  \"subdomains\": {";
   unsigned int i = 0;
   for (const auto &[name, r] : subdomains)
@@ -784,6 +862,7 @@ main(int argc, char *argv[])
   try
     {
       Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
+      program_start_time() = MPI_Wtime();
 
       const std::string prm_file = (argc > 1) ? argv[1] : "coupled_diffusion.prm";
 
@@ -899,6 +978,7 @@ main(int argc, char *argv[])
 
       pcout() << "Coupling master and slave..." << std::endl;
       auto problem = std::make_shared<MultiDomainProblem>(master, slave);
+      problem->set_solver_tolerances(parameters.inner_tolerances);
 
       ReductionControl solver_control(parameters.gmres_max_it,
                                       parameters.gmres_tolerance,

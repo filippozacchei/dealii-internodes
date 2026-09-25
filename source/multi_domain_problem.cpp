@@ -16,10 +16,15 @@ namespace internodes
     size_interface_master =
       master->interface_dofHandler_ptr->interface_dofs_owned().n_elements();
 
+    // Each handler interpolates onto the *other* subdomain's interface, so
+    // it needs the interpolation weights of the destination points owned by
+    // this rank on that side only.
     slave->interface_dofHandler_ptr->setup_destination_points(
-      master->interface_dofHandler_ptr->support_points_global());
+      master->interface_dofHandler_ptr->support_points_global(),
+      master->interface_dofHandler_ptr->interface_dofs_owned());
     master->interface_dofHandler_ptr->setup_destination_points(
-      slave->interface_dofHandler_ptr->support_points_global());
+      slave->interface_dofHandler_ptr->support_points_global(),
+      slave->interface_dofHandler_ptr->interface_dofs_owned());
   }
 
   void
@@ -29,15 +34,18 @@ namespace internodes
     residual_slave  = 0;
     residual_master = 0;
 
-    const double       tolerance = 1e-13;
-    const double       reduction = 1e-11;
     const unsigned int max_iters = 1000000;
-    ReductionControl control(max_iters, tolerance, reduction, false, false);
+    ReductionControl control(max_iters,
+                             tolerances.interface_mass.tolerance,
+                             tolerances.interface_mass.reduction,
+                             false,
+                             false);
     SolverCG<TrilinosWrappers::MPI::Vector> solver(control);
     {
       TimerOutput::Scope timer_section(timer_output(), "  interpolateResidual: solve M_gamma");
       solver.solve(slave->M_gamma, residual_slave, src, precond);
     }
+    record_cg_solve("interface_mass", control.last_step());
 
     slave->interface_dofHandler_ptr->interpolate(residual_master,
                                                   residual_slave,

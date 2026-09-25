@@ -60,33 +60,36 @@ namespace internodes
                 const TrilinosWrappers::MPI::Vector &src,
                 const std::vector<Point<dim>>       &points) const override;
 
+    /// Computes the RBF weights (sparse, in `destination_points_map`) of the
+    /// destination points owned by this rank. The weights of a point depend
+    /// only on the (replicated) source support points, so each rank computes
+    /// its own and nothing is communicated.
     void
-    setup_destination_points(const std::vector<Point<dim>> &points) override;
+    setup_destination_points(const std::vector<Point<dim>> &points,
+                             const IndexSet                &destination_owned) override;
+
+    /// Tolerances of the CG solve with $\Phi$ done in every interpolate().
+    void
+    set_interpolation_tolerance(const double tolerance, const double reduction) override
+    {
+      phi_tolerance = tolerance;
+      phi_reduction = reduction;
+    }
 
   private:
-    void
-    DoFs_values(const Point<dim>                                    &p,
-                Vector<double>                                       &rhs_vector,
-                const std::vector<std::pair<Point<dim>, unsigned int>> &results) const;
-
     double radius;
     Mode   mode = Mode::Wendland;
+
+    double phi_tolerance = 1e-12;
+    double phi_reduction = 1e-10;
 
     SparsityPattern                 sp;
     TrilinosWrappers::SparseMatrix  Phi;
     TrilinosWrappers::MPI::Vector   scaling_factors;
     TrilinosWrappers::PreconditionAMG preconditioner_Phi;
 
-    /// destination point index -> RBF weights, indexed directly by *global*
-    /// interface-local DoF index (dense, unlike the sparse
-    /// index/value-pair representation used by the base class for the
-    /// Lagrange case -- since an RBF stencil is a full row of `Phi`, not
-    /// just the few nonzero shape functions of one cell).
-    std::map<types::global_dof_index, Vector<double>> destination_points_map_RBF;
-
     mutable TrilinosWrappers::MPI::Vector temp;
     mutable Vector<double>                temp_data;
-    mutable Vector<double>                rhs;
 
     std::shared_ptr<RTreeHandler> rtree;
 

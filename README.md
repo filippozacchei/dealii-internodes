@@ -99,8 +99,10 @@ and the average cell diameter of each subdomain, the RBF radii, the number of
 GMRES iterations, the broken $H^1$ error (in total and per subdomain), and the
 wall time of every timed phase (maximum over the ranks, and number of calls):
 subproblem and RBF setup, destination-point setup, assembly, Steps 1–4, the
-RBF `Φ` solve, the normal-derivative evaluation, and so on. This is what the
-scripts in `reproduce/` are meant to read.
+RBF `Φ` solve, the normal-derivative evaluation, and so on. It also has the
+wall-clock time of the whole program (`total_wall`), the tolerances of the
+inner CG solves, and the number of solves and CG iterations of each kind
+(`cg`). This is what the scripts in `reproduce/` are meant to read.
 
 ### Verified results
 
@@ -191,9 +193,15 @@ last digit:
   defaults are left preconditioning and a restart after 28 iterations. The
   stopping criterion is an absolute tolerance on the residual norm and,
   optionally, a reduction relative to the initial residual (`GMRES reduction`).
-- **Inner tolerances.** The subdomain solves use CG tolerances of
-  $10^{-13}$ (absolute) / $10^{-11}$ (relative) — much tighter than the
-  outer GMRES tolerance ($10^{-8}$) and can probably be relaxed for speed.
+- **Inner tolerances.** The inner CG solves (the subdomain solves, the
+  auxiliary problem of the Schur preconditioner, the interface mass matrix,
+  and the RBF matrix) use by default absolute / relative tolerances of
+  $10^{-13}$ / $10^{-11}$ ($10^{-12}$ / $10^{-10}$ for the RBF matrix) — much
+  tighter than the outer GMRES tolerance ($10^{-8}$). They are parameters
+  (`Solver/Subdomain solve tolerance`, `… reduction`, `Preconditioner solve …`,
+  `Interface mass solve …`, `RBF solve …`), and the results file reports the
+  CG iterations each kind took, so the effect of relaxing them can be
+  measured; the defaults are the values of the paper's runs.
 - **Naming.** The class names match the architecture diagram above; a new
   PDE model is a `SubProblemBase` subclass overriding `localBilinearForm()`.
 - **deal.II version portability.** Tested against both 9.7.0 and 9.8.0;

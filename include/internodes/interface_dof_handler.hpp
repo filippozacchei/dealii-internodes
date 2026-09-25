@@ -59,21 +59,39 @@ namespace internodes
 
     virtual ~InterfaceDoFHandler() = default;
 
-    /// Locates, for each of the given points (assumed to lie on this
-    /// subdomain's interface), the owning cell and the interface DoFs/shape
-    /// function values needed to evaluate a finite element function there.
-    /// Must be called before interpolate().
+    /// Computes, for each of the given points (assumed to lie on this
+    /// subdomain's interface), the interface DoFs and shape function values
+    /// needed to evaluate a finite element function there -- but only for
+    /// the points whose index is in @p destination_owned, i.e. the entries
+    /// of the destination vector that this rank owns: the weights of the
+    /// other points are never needed here, so they are neither kept nor
+    /// communicated. Must be called before interpolate(), and the
+    /// destination vector passed to interpolate() must own exactly
+    /// @p destination_owned.
+    ///
+    /// @param points             all destination points, indexed like the
+    ///                           destination vector (the same on every rank).
+    /// @param destination_owned  indices, among @p points, owned by this rank.
     virtual void
-    setup_destination_points(const std::vector<Point<dim>> &points);
+    setup_destination_points(const std::vector<Point<dim>> &points,
+                             const IndexSet                &destination_owned);
 
     /// Interpolates the finite element function with interface-DoF
     /// coefficients @p src onto the destination points passed to the last
     /// call of setup_destination_points(), filling @p dst (indexed by
-    /// destination point number, not by DoF).
+    /// destination point number, not by DoF). @p points is not used any
+    /// more (the weights were computed in setup_destination_points()); it is
+    /// kept so that callers do not change.
     virtual void
     interpolate(TrilinosWrappers::MPI::Vector       &dst,
                 const TrilinosWrappers::MPI::Vector &src,
                 const std::vector<Point<dim>>       &points) const;
+
+    /// Sets the tolerances of the CG solves done inside interpolate(), for
+    /// the interpolation operators that have any (RL-RBF); no-op here.
+    virtual void
+    set_interpolation_tolerance(const double /*tolerance*/, const double /*reduction*/)
+    {}
 
     /// Assembles the interface mass matrix $M_{\Gamma_k}$, i.e.
     /// $(M_{\Gamma_k})_{ij} = \int_{\Gamma_k} \mu_j \mu_i \, d\sigma$ over
@@ -111,7 +129,7 @@ namespace internodes
       return support_points_;
     }
 
-    std::vector<Point<dim>>
+    const std::vector<Point<dim>> &
     support_points_global() const
     {
       return support_points_global_;
@@ -231,14 +249,14 @@ namespace internodes
 
     /// destination point index -> (interface-local DoF indices, shape
     /// function values) needed to evaluate a finite element function at
-    /// that point.
+    /// that point. Only the points in `destination_owned_` are stored.
     std::map<types::global_dof_index,
              std::pair<std::vector<types::global_dof_index>, std::vector<double>>>
       destination_points_map;
 
-  private:
-    void
-    DoFs_values(const types::global_dof_index &i, Vector<double> &rhs_vector) const;
+    /// Destination vector entries owned by this rank, as passed to the last
+    /// setup_destination_points().
+    IndexSet destination_owned_;
   };
 } // namespace internodes
 

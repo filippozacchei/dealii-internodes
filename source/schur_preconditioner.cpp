@@ -50,15 +50,19 @@ namespace internodes
       rhs[interface_indices[i]] = src[owned_indices[i]];
     rhs.compress(VectorOperation::insert);
 
-    const double       tolerance = 1e-13;
-    const double       reduction = 1e-11;
-    const unsigned int max_iters = 1000000;
-    ReductionControl control(max_iters, tolerance, reduction, false, false);
+    const CGTolerance &tolerances = problem->tolerances.preconditioner;
+    const unsigned int max_iters  = 1000000;
+    ReductionControl control(max_iters,
+                             tolerances.tolerance,
+                             tolerances.reduction,
+                             false,
+                             false);
     SolverCG<TrilinosWrappers::MPI::Vector> solver(control);
     {
       TimerOutput::Scope timer_section(timer_output(), "  Schur preconditioner: apply");
       solver.solve(matrix, dst_global, rhs, preconditioner_problem);
     }
+    record_cg_solve("preconditioner", control.last_step());
 
     for (unsigned int i = 0; i < owned_indices.size(); ++i)
       dst[owned_indices[i]] = dst_global[interface_indices[i]];

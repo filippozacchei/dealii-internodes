@@ -9,6 +9,7 @@
 #include <iostream>
 #include <map>
 #include <set>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -72,6 +73,35 @@ namespace internodes
                                  TimerOutput::never,
                                  TimerOutput::wall_times);
     return instance;
+  }
+
+  /// Number of solves and total number of CG iterations of one kind of inner
+  /// solve.
+  struct CGStatistics
+  {
+    unsigned long n_solves     = 0;
+    unsigned long n_iterations = 0;
+  };
+
+  /// CG statistics of the inner solves, by kind ("subdomain",
+  /// "preconditioner", "interface_mass", "rbf"), accumulated over the run and
+  /// written to the results file: the iterations per solve show what a
+  /// change of the inner tolerances (InnerSolverTolerances) buys. Every rank
+  /// records the same numbers.
+  inline std::map<std::string, CGStatistics> &
+  cg_statistics()
+  {
+    static std::map<std::string, CGStatistics> instance;
+    return instance;
+  }
+
+  /// Records one finished CG solve of the given kind.
+  inline void
+  record_cg_solve(const std::string &kind, const unsigned int n_iterations)
+  {
+    CGStatistics &s = cg_statistics()[kind];
+    ++s.n_solves;
+    s.n_iterations += n_iterations;
   }
 
   /// @return whether @p value is contained in @p container.

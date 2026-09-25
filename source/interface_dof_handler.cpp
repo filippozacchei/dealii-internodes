@@ -12,7 +12,10 @@
 #include <deal.II/lac/sparsity_tools.h>
 #include <deal.II/lac/vector.h>
 
+#include "internodes/rtree_handler.hpp"
+
 #include <algorithm>
+#include <iterator>
 
 namespace internodes
 {
@@ -153,30 +156,30 @@ namespace internodes
   }
 
   void
-  InterfaceDoFHandler::DoFs_values(const types::global_dof_index &i,
-                                    Vector<double>                &rhs_vector) const
-  {
-    rhs_vector = 0.0;
-    const auto point_data = destination_points_map.find(i);
-    if (point_data != destination_points_map.end())
-      {
-        const auto &data = point_data->second;
-        rhs_vector.add(data.first, data.second);
-      }
-  }
-
-  void
   InterfaceDoFHandler::setup_destination_points(
-    const std::vector<Point<dim>> &points)
+    const std::vector<Point<dim>> &points,
+    const IndexSet                &destination_owned)
   {
     TimerOutput::Scope timer_section(timer_output(), "Setup destination points");
 
     destination_points_map.clear();
+    destination_owned_ = destination_owned;
 
-    const auto         ptr_mapping = this->mapping();
     const unsigned int dofs_per_cell =
       this->dof_handler()->get_fe().n_dofs_per_cell();
     std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+
+    // Spatial index of the destination points: an interface cell only has to
+    // test the points inside its own bounding box, instead of every point
+    // (the cost was O(interface cells x points)).
+    using PointEntry = std::pair<Point<dim>, unsigned int>;
+    std::vector<PointEntry> point_entries;
+    point_entries.reserve(points.size());
+    for (unsigned int i = 0; i < points.size(); ++i)
+      point_entries.emplace_back(points[i], i);
+    const bgi::rtree<PointEntry, bgi::quadratic<16>> point_tree(point_entries.begin(),
+                                                                point_entries.end());
+    std::vector<PointEntry> candidates;
 
     std::vector<bool> found(points.size(), false);
 
@@ -196,8 +199,26 @@ namespace internodes
         if (!at_interface)
           continue;
 
-        for (unsigned int i = 0; i < points.size(); ++i)
+        // Bounding box of the cell, slightly enlarged so that it contains
+        // every point that cell->point_inside() accepts (which has a small
+        // tolerance of its own).
+        const BoundingBox<dim> cell_box = cell->bounding_box();
+        Point<dim>             box_min  = cell_box.get_boundary_points().first;
+        Point<dim>             box_max  = cell_box.get_boundary_points().second;
+        const double           margin   = 1e-6 * cell->diameter();
+        for (unsigned int d = 0; d < dim; ++d)
           {
+            box_min[d] -= margin;
+            box_max[d] += margin;
+          }
+
+        candidates.clear();
+        point_tree.query(bgi::intersects(BoundingBox<dim>(std::make_pair(box_min, box_max))),
+                         std::back_inserter(candidates));
+
+        for (const PointEntry &candidate : candidates)
+          {
+            const unsigned int i = candidate.second;
             if (found[i] || !cell->point_inside(points[i]))
               continue;
 
@@ -220,23 +241,46 @@ namespace internodes
           }
       }
 
+    // A destination point is found by the rank(s) owning a cell that
+    // contains it, not necessarily by the rank that owns its entry of the
+    // destination vector: merge, then keep the weights of the owned points
+    // only. (The payload is small: a few weights per point.)
     destination_points_map = compute_map_union(destination_points_map, mpi_comm);
+    for (auto it = destination_points_map.begin(); it != destination_points_map.end();)
+      if (destination_owned_.is_element(it->first))
+        ++it;
+      else
+        it = destination_points_map.erase(it);
   }
 
   void
   InterfaceDoFHandler::interpolate(TrilinosWrappers::MPI::Vector       &dst,
                                     const TrilinosWrappers::MPI::Vector &src,
-                                    const std::vector<Point<dim>>       &points) const
+                                    const std::vector<Point<dim>> & /*points*/) const
   {
-    Vector<double> src_data(src);
-    Vector<double> rhs(this->interface_dofs_owned().size());
+    AssertThrow(dst.locally_owned_elements() == destination_owned_,
+                ExcMessage("The destination vector must own exactly the entries "
+                           "passed as destination_owned to "
+                           "setup_destination_points()."));
 
-    for (std::size_t i = 0; i < points.size(); ++i)
-      if (dst.locally_owned_elements().is_element(i))
-        {
-          DoFs_values(i, rhs);
-          dst(i) = rhs * src_data;
-        }
+    const Vector<double> src_data(src);
+
+    // Sparse evaluation: the weights of a point are stored as (indices,
+    // values); there is no need for a dense row of the size of the
+    // interface.
+    for (const types::global_dof_index i : destination_owned_)
+      {
+        double     value = 0.;
+        const auto point_data = destination_points_map.find(i);
+        if (point_data != destination_points_map.end())
+          {
+            const auto &indices = point_data->second.first;
+            const auto &weights = point_data->second.second;
+            for (std::size_t k = 0; k < indices.size(); ++k)
+              value += weights[k] * src_data[indices[k]];
+          }
+        dst(i) = value;
+      }
 
     dst.compress(VectorOperation::insert);
   }

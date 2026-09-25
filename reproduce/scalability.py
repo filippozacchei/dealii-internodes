@@ -27,6 +27,7 @@ The phases plotted are those of the paper:
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -66,7 +67,10 @@ PHASES = [
         "Assembly Interpolation Operators",
         ("Setup destination points", "setup: RBF operators (Phi, AMG, scaling)"),
     ),
-    ("Assembly Internal Operators", ("Step 0: assembly (master/slave)",)),
+    (
+        "Assembly Internal Operators",
+        ("Step 0: assembly (master/slave)", "Step 0: homogeneous-phase data update"),
+    ),
     ("Step 1", ("Step 1: u^(f) on master/slave",)),
     ("Step 2", ("Step 2: interface residual chi",)),
     ("Step 3", ("Step 3: interface solve (total)",)),
@@ -83,10 +87,28 @@ def _look():
         "Step 2": dict(color=style.ORANGE, marker="^", linestyle=":"),
         "Step 3": dict(color=style.GREEN, marker="s", linestyle="-."),
         "Step 4": dict(color=style.PURPLE, marker="D", linestyle="--"),
+        "Whole run": dict(color="0.35", marker="x", linestyle="-"),
     }
 
 
 # ---------------------------------------------------------------------------
+def _run_name(n, p, k=1, repeats=1):
+    """File stem of run k (1-based) of test n on p cores; the suffix _rK is
+    only used when there are several runs of each case."""
+    return f"test{n}_np{p}" + (f"_r{k}" if repeats > 1 else "")
+
+
+def apply_overrides(sections, overrides):
+    """Applies --set "Section/Name=value" overrides to the parameter sections."""
+    for item in overrides:
+        key, equals, value = item.partition("=")
+        section, slash, name = key.partition("/")
+        if not (equals and slash and section.strip() and name.strip()):
+            sys.exit(f'--set expects "Section/Name=value", got {item!r}')
+        sections.setdefault(section.strip(), {})[name.strip()] = value.strip()
+    return sections
+
+
 def test_sections(n, levels_down=0):
     """Parameter sections of test n from testN.prm, with all refinement levels
     lowered by levels_down (0 = the paper's)."""
@@ -132,14 +154,15 @@ def prepare(args):
     submit = ["#!/bin/bash", f"cd {ROOT}"]
     for n in map(int, args.tests.split(",")):
         for p in map(int, args.cores.split(",")):
-            name = f"test{n}_np{p}"
-            sections = test_sections(n, args.levels_down)
-            sections.setdefault("Run", {})["Results file"] = str(results / f"{name}.json")
-            prm = results / f"{name}.prm"
-            prm.write_text(prm_text(sections))
-            script = results / f"{name}.sh"
-            script.write_text(job_script(name, p, prm, args, results))
-            submit.append(f"sbatch {script}")
+            for k in range(1, args.repeats + 1):
+                name = _run_name(n, p, k, args.repeats)
+                sections = apply_overrides(test_sections(n, args.levels_down), args.set)
+                sections.setdefault("Run", {})["Results file"] = str(results / f"{name}.json")
+                prm = results / f"{name}.prm"
+                prm.write_text(prm_text(sections))
+                script = results / f"{name}.sh"
+                script.write_text(job_script(name, p, prm, args, results))
+                submit.append(f"sbatch {script}")
     (results / "submit_all.sh").write_text("\n".join(submit) + "\n")
     print(f"Wrote {len(submit) - 2} jobs to {results}; submit them with: bash {results / 'submit_all.sh'}")
 
@@ -149,25 +172,28 @@ def run_local(args):
     for n in map(int, args.tests.split(",")):
         print(f"Test {n} (levels lowered by {args.levels_down})")
         for p in map(int, args.cores.split(",")):
-            run_case(
-                f"test{n}_np{p}",
-                test_sections(n, args.levels_down),
-                results,
-                np=p,
-                exe=args.exe,
-                timeout=args.timeout,
-                force=args.force,
-                retry_failed=args.retry_failed,
-            )
+            for k in range(1, args.repeats + 1):
+                run_case(
+                    _run_name(n, p, k, args.repeats),
+                    apply_overrides(test_sections(n, args.levels_down), args.set),
+                    results,
+                    np=p,
+                    exe=args.exe,
+                    timeout=args.timeout,
+                    force=args.force,
+                    retry_failed=args.retry_failed,
+                )
 
 
 # ---------------------------------------------------------------------------
 def load_test(n, tag=None):
-    """{cores: results} for test n."""
+    """{cores: [results of every run]} for test n (testN_npP.json, or
+    testN_npP_rK.json for repeated runs)."""
     found = {}
     for path in _results_dir(tag).glob(f"test{n}_np*.json"):
-        p = int(path.stem.split("_np")[1])
-        found[p] = json.loads(path.read_text())
+        m = re.fullmatch(rf"test{n}_np(\d+)(?:_r\d+)?", path.stem)
+        if m:
+            found.setdefault(int(m.group(1)), []).append(json.loads(path.read_text()))
     return dict(sorted(found.items()))
 
 
@@ -176,22 +202,57 @@ def phase_times(result):
     return {label: sum(t.get(s, {}).get("wall_max", 0.0) for s in sections) for label, sections in PHASES}
 
 
-def plot_test(n, formats, tag=None):
+def mean_phase_times(runs):
+    """Phase times averaged over the runs of one case."""
+    per_run = [phase_times(r) for r in runs]
+    return {label: float(np.mean([t[label] for t in per_run])) for label, _ in PHASES}
+
+
+def spread(values):
+    """Relative standard deviation of the values (0 for a single one)."""
+    values = np.asarray(values, dtype=float)
+    return float(np.std(values) / np.mean(values)) if len(values) > 1 and np.mean(values) > 0 else 0.0
+
+
+def plot_test(n, formats, tag=None, with_total=False):
     data = load_test(n, tag)
     if len(data) < 2:
         return print(f"  test {n}: fewer than two core counts, skipped")
     LOOK = _look()
     cores = np.array(list(data))
     p0 = cores[0]
-    times = {label: np.array([phase_times(r)[label] for r in data.values()]) for label, _ in PHASES}
+    times = {label: np.array([mean_phase_times(runs)[label] for runs in data.values()]) for label, _ in PHASES}
+    series = [label for label, _ in PHASES]
+
+    n_runs = {p: len(runs) for p, runs in data.items()}
+    if max(n_runs.values()) > 1:
+        worst = max(
+            (
+                spread([phase_times(r)[label] for r in runs])
+                for runs in data.values()
+                for label, _ in PHASES
+                if len(runs) > 1 and np.mean([phase_times(r)[label] for r in runs]) > 0.05
+            ),
+            default=None,
+        )
+        print(f"  test {n}: runs per core count {sorted(set(n_runs.values()))}; times are means"
+              + (f"; largest relative standard deviation of a phase above 0.05 s: {100 * worst:.0f}%" if worst is not None else ""))
+
+    if with_total:
+        totals = [[r.get("total_wall") for r in runs] for runs in data.values()]
+        if all(t is not None for runs in totals for t in runs):
+            times["Whole run"] = np.array([np.mean(runs) for runs in totals])
+            series.append("Whole run")
+        else:
+            print(f"  test {n}: no total_wall in these results (older code), whole-run series skipped")
     name = TESTS[n]["figure"]
-    suffix = TESTS[n]["suffix"]
+    suffix = TESTS[n]["suffix"] + ("_with_total" if "Whole run" in series else "")
 
     for kind in ("scalability", "total"):
         fig, ax = style.new_axes(style.SCALABILITY_FIGSIZE)
         ideal = cores / p0 if kind == "scalability" else p0 / cores
         ax.loglog(cores, ideal, label="Ideal", **LOOK["Ideal"])
-        for label, _ in PHASES:
+        for label in series:
             t = times[label]
             valid = t > 0
             if not valid.any():
@@ -224,7 +285,7 @@ def mpl_null():
 
 def plot_all(args):
     for n in map(int, args.tests.split(",")):
-        plot_test(n, tuple(args.formats.split(",")), args.tag)
+        plot_test(n, tuple(args.formats.split(",")), args.tag, args.with_total)
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +300,9 @@ def main():
     parser.add_argument("--formats", default="png,pdf")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--retry-failed", action="store_true")
+    parser.add_argument("--set", action="append", default=[], metavar="Section/Name=value", help="override a parameter of the test files (repeatable), e.g. --set \"Solver/Subdomain solve reduction=1e-8\"; use --tag to keep such a study apart")
+    parser.add_argument("--repeats", type=int, default=1, help="runs of every case (prepare/run); the results are testN_npP_rK.* and plot averages the times")
+    parser.add_argument("--with-total", action="store_true", help="plot: also draw the wall-clock time of the whole program (setup and mesh included, not only the phases of the paper)")
     parser.add_argument("--timeout", type=float, default=3600, help="seconds per local run")
     cluster = parser.add_argument_group("prepare (SLURM)")
     cluster.add_argument("--account")
