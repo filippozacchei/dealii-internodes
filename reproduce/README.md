@@ -113,13 +113,49 @@ python3 scalability.py prepare --tests 1,2,3 --cores 96,192,240,288,384,480,768 
        --modules "module load <mpi> <libraries>" --time-limit 04:00:00
 bash results/scalability/submit_all.sh
 
-# 3. copy results/scalability/*.json back (rsync/scp) and plot on a laptop
+# 3. bring the results back through a git branch (see "Getting results back"
+#    below), then plot on a laptop
 python scalability.py plot
 
 # laptop check of the pipeline, everything scaled down (timings are meaningless)
 python scalability.py run --tests 1,2 --cores 1,2,4 --levels-down 4
 python scalability.py plot --tests 1,2
 ```
+
+### Getting results back
+
+The result files are small (JSON, parameter files, logs), so a dedicated
+branch is the simplest way to bring them from the cluster to a laptop, and it
+records which code version produced them. `results/` is git-ignored on
+`main`, hence `-f`. The cluster needs push access to the repository: a GitHub
+personal access token or an SSH key, and `git config user.name` /
+`user.email`.
+
+Use a second clone for this rather than switching branches in the working
+repository: files tracked on the results branch but not on `main` would be
+deleted from disk by `git checkout main`.
+
+```bash
+# on the cluster: a second clone only for results (create it once)
+git clone https://github.com/filippozacchei/dealii-internodes.git $WORK/internodes-results
+cd $WORK/internodes-results
+git checkout -b results-galileo100
+
+# ... and every time results should be sent back
+cd $WORK/internodes-results
+mkdir -p reproduce/results && cp -r $WORK/dealii-internodes/reproduce/results/. reproduce/results/
+git add -f reproduce/results
+git commit -m "Galileo100 results, code at $(git -C $WORK/dealii-internodes rev-parse --short HEAD)"
+git push -u origin results-galileo100
+
+# on the laptop: take the files without switching branches
+git fetch origin results-galileo100
+git checkout FETCH_HEAD -- reproduce/results
+git reset -q reproduce/results               # unstage; the files stay (ignored)
+```
+
+Files with the same name (e.g. accuracy cases already run locally) are
+overwritten by the cluster's.
 
 The accuracy figures' finest levels (5 and 6) can be run on one node with a
 batch script like this (errors do not depend on the machine or the rank
