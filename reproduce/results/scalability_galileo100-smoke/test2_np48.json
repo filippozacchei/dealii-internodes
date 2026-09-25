@@ -1,0 +1,40 @@
+{
+  "mode": "coupled",
+  "geometry": "adjacent_boxes",
+  "n_mpi_ranks": 48,
+  "interpolation": "rbf",
+  "rbf_radius_factor": 1,
+  "schur_preconditioner": true,
+  "gmres_iterations": 7,
+  "broken_H1_error": 1.17986680418,
+  "subdomains": {
+    "master": {"degree": 1, "n_dofs": 35937, "n_interface_dofs": 1089, "n_cells": 32768, "h_avg": 0.108253175473, "rbf_radius": 0.108253175473, "H1_error": 0.0794489821988},
+    "slave": {"degree": 1, "n_dofs": 4913, "n_interface_dofs": 289, "n_cells": 4096, "h_avg": 0.216506350946, "rbf_radius": 0.216506350946, "H1_error": 1.17718882718}
+  },
+  "timings": {
+    "Schur preconditioner: apply": {"wall_max": 0.247528181, "calls": 8}, 
+    "interpolate: evaluate at points": {"wall_max": 0.002493427, "calls": 16}, 
+    "interpolate: solve Phi": {"wall_max": 0.012684972, "calls": 16}, 
+    "interpolateResidual: solve M_gamma": {"wall_max": 0.011297386, "calls": 8}, 
+    "normal derivative": {"wall_max": 0.000791701, "calls": 16}, 
+    "Assembly Preconditioner": {"wall_max": 0.22639125, "calls": 1}, 
+    "Setup destination points": {"wall_max": 0.00257071, "calls": 2}, 
+    "Step 0: assembly (master/slave)": {"wall_max": 0.029513377, "calls": 3}, 
+    "Step 0: assembly (preconditioners)": {"wall_max": 0.25695294, "calls": 1}, 
+    "Step 1: u^(f) on master/slave": {"wall_max": 0.040400353, "calls": 1}, 
+    "Step 2: interface residual chi": {"wall_max": 0.002936445, "calls": 1}, 
+    "Step 3 (GMRES): Q21 interpolation": {"wall_max": 0.008556634, "calls": 7}, 
+    "Step 3 (GMRES): residual computation": {"wall_max": 0.017137615, "calls": 7}, 
+    "Step 3 (GMRES): subdomain solves": {"wall_max": 0.250285107, "calls": 7}, 
+    "Step 3: interface solve (total)": {"wall_max": 0.767177483, "calls": 1}, 
+    "Step 3a: initialize Schur preconditioner": {"wall_max": 0.007503945, "calls": 1}, 
+    "Step 3b: solve S lambda = chi": {"wall_max": 0.532474759, "calls": 1}, 
+    "Step 4: u^(lambda) on master/slave": {"wall_max": 0.035597256, "calls": 1}, 
+    "driver: solve()": {"wall_max": 1.13893499, "calls": 1}, 
+    "setup: RBF operators (Phi, AMG, scaling)": {"wall_max": 0.055966471, "calls": 2}, 
+    "setup: interface-DoFs-last renumbering": {"wall_max": 0.018201216, "calls": 2}, 
+    "setup: subproblem (DoFs, interface, matrices)": {"wall_max": 0.110825144, "calls": 2}, 
+    "step_rhs: f_k - A_{k,Gamma_k} lambda_k": {"wall_max": 0.000919821, "calls": 18}, 
+    "subdomain linear solve": {"wall_max": 0.3220048, "calls": 18}
+  }
+}
