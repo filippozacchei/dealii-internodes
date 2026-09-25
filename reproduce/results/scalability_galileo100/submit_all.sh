@@ -1,5 +1,23 @@
 #!/bin/bash
 cd /g100_work/uBS26_MatGer/dealii-internodes/reproduce
-sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test1_np48.sh
-sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test2_np48.sh
-sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test3_np48.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test1_np96.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test1_np192.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test1_np240.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test1_np288.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test1_np384.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test1_np480.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test1_np768.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test2_np96.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test2_np192.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test2_np240.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test2_np288.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test2_np384.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test2_np480.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test2_np768.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test3_np96.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test3_np192.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test3_np240.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test3_np288.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test3_np384.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test3_np480.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test3_np768.sh
