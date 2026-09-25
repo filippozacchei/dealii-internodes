@@ -1,0 +1,33 @@
+subsection Geometry
+  set Type = adjacent_boxes
+  set Subdivisions master = 1,1,1
+  set Subdivisions slave = 1,1,1
+  set Global refinement master = 7
+  set Global refinement slave = 5
+end
+
+subsection Discretization
+  set Master degree = 2
+  set Slave degree = 4
+  set RBF radius = 0.0
+  set RBF radius factor = 1
+end
+
+subsection Boundary conditions
+  set Dirichlet ids master = 0
+  set Neumann ids master = 2,3,4,5
+  set Interface id master = 1
+  set Dirichlet ids slave = 1
+  set Neumann ids slave = 2,3,4,5
+  set Interface id slave = 0
+end
+
+subsection Solver
+  set GMRES tolerance = 1e-14
+  set GMRES reduction = 1e-8
+  set GMRES max iterations = 1000
+end
+
+subsection Run
+  set Results file = /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100-opt/test3_np480.json
+end
