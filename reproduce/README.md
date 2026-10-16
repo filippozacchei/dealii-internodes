@@ -99,20 +99,20 @@ the refinement levels of the paper's scaling figures (`p1r8-p1r7`, `p2r7-p4r5`,
 
 # 1. smoke test (small and fast). Levels lowered by 3 keep every mesh
 #    non-degenerate on 96 ranks.
-python3 scalability.py prepare --tests 1,2,3 --cores 48,96 --levels-down 3 --tag galileo100-smoke \
+python3 scalability.py prepare --tests 1,2,3,4,5 --cores 48,96 --levels-down 3 --tag galileo100-smoke \
        --account <account> --partition <partition> \
        --modules "module load <mpi> <libraries>" --time-limit 00:20:00
 bash results/scalability_galileo100-smoke/submit_all.sh
-# check results/scalability_galileo100-smoke/test{1,2,3}_np{48,96}.json exist and parse
+# check results/scalability_galileo100-smoke/test{1..5}_np{48,96}.json exist and parse
 
 # 2. the real sweep (Table 1 sizes), smallest core count first to learn the
 #    run time and memory (sacct -j <id> --format=JobID,Elapsed,MaxRSS,State)
-python3 scalability.py prepare --tests 1,2,3 --cores 48 --tag galileo100 \
+python3 scalability.py prepare --tests 1,2,3,4,5 --cores 48 --tag galileo100 \
        --account <account> --partition <partition> \
        --modules "module load <mpi> <libraries>" --time-limit 08:00:00
 bash results/scalability_galileo100/submit_all.sh
 # ... then the remaining core counts (write new scripts, resubmit):
-python3 scalability.py prepare --tests 1,2,3 --cores 96,192,240,288,384,480,768 --tag galileo100 \
+python3 scalability.py prepare --tests 1,2,3,4,5 --cores 96,192,240,288,384,480,768 --tag galileo100 \
        --account <account> --partition <partition> \
        --modules "module load <mpi> <libraries>" --time-limit 04:00:00
 bash results/scalability_galileo100/submit_all.sh
