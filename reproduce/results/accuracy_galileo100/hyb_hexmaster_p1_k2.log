@@ -1,0 +1,59 @@
+=== dealii-internodes: coupled_diffusion example ===
+Parameter file: /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy_galileo100/hyb_hexmaster_p1_k2.prm
+RBF radii: master 0.866025, slave 0.902369
+Building master subproblem...
+Assembling RBF sparsity pattern...
+Assembling RBF matrix Phi...
+Factoring Phi and computing RL-RBF scaling factors...
+Building slave subproblem...
+Assembling RBF sparsity pattern...
+Assembling RBF matrix Phi...
+Factoring Phi and computing RL-RBF scaling factors...
+Coupling master and slave...
+Solving...
+Step 0: assembling system matrices
+Step 1: solving for u^(f)
+Step 2: computing interface residual chi
+Step 3: solving S*lambda = chi
+Step 4: solving for u^(lambda)
+GMRES converged in 10 iterations.
+Broken H1 error vs. exact solution: 10.2965
+
+
++-----------------------------------------------------------+------------+------------+
+| Total wallclock time elapsed since start                  |     0.217s |            |
+|                                                           |            |            |
+| Section                                       | no. calls |  wall time | % of total |
++-----------------------------------------------+-----------+------------+------------+
+| RBF setup: AMG initialization                 |         2 |    0.0133s |       6.1% |
+| RBF setup: Phi assembly                       |         2 |   0.00186s |      0.86% |
+| RBF setup: R-tree                             |         2 |  0.000258s |      0.12% |
+| RBF setup: scaling solve                      |         2 |    0.0562s |        26% |
+| RBF setup: sparsity pattern                   |         2 |   0.00726s |       3.3% |
+| Schur preconditioner: apply                   |        11 |   0.00147s |      0.68% |
+| interpolate: evaluate at points               |        22 |   0.00163s |      0.75% |
+| interpolate: solve Phi                        |        22 |   0.00816s |       3.8% |
+| interpolateResidual: solve M_gamma            |        11 |   0.00423s |         2% |
+| normal derivative                             |        22 |  0.000791s |      0.36% |
+| Assembly Preconditioner                       |         1 |   0.00459s |       2.1% |
+| Setup destination points                      |         2 |  0.000281s |      0.13% |
+| Step 0: assembly (master/slave)               |         1 |   0.00516s |       2.4% |
+| Step 0: assembly (preconditioners)            |         1 |   0.00922s |       4.2% |
+| Step 0: homogeneous-phase data update         |         2 |  0.000314s |      0.14% |
+| Step 1: u^(f) on master/slave                 |         1 |    0.0159s |       7.3% |
+| Step 2: interface residual chi                |         1 |   0.00212s |      0.98% |
+| Step 3 (GMRES): Q21 interpolation             |        10 |   0.00469s |       2.2% |
+| Step 3 (GMRES): residual computation          |        10 |    0.0103s |       4.7% |
+| Step 3 (GMRES): subdomain solves              |        10 |   0.00594s |       2.7% |
+| Step 3: interface solve (total)               |         1 |    0.0409s |        19% |
+| Step 3a: initialize Schur preconditioner      |         1 |   0.00311s |       1.4% |
+| Step 3b: solve S lambda = chi                 |         1 |    0.0317s |        15% |
+| Step 4: u^(lambda) on master/slave            |         1 |  0.000576s |      0.27% |
+| driver: solve()                               |         1 |    0.0788s |        36% |
+| setup: RBF operators (Phi, AMG, scaling)      |         2 |    0.0837s |        39% |
+| setup: interface-DoFs-last renumbering        |         2 |   0.00456s |       2.1% |
+| setup: subproblem (DoFs, interface, matrices) |         2 |     0.112s |        52% |
+| step_rhs: f_k - A_{k,Gamma_k} lambda_k        |        24 |    0.0154s |       7.1% |
+| subdomain linear solve                        |        24 |   0.00331s |       1.5% |
++-----------------------------------------------+-----------+------------+------------+
+

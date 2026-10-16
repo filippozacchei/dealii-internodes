@@ -2,7 +2,7 @@
 #SBATCH --job-name=test1_np240
 #SBATCH --nodes=5
 #SBATCH --ntasks-per-node=48
-#SBATCH --time=00:30:00
+#SBATCH --time=04:00:00
 #SBATCH --output=/g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100/test1_np240.log
 #SBATCH --account=uBS26_MatGer
 #SBATCH --partition=g100_usr_prod

@@ -1,0 +1,16 @@
+=== dealii-internodes: coupled_diffusion example ===
+Parameter file: /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy_galileo100/mono_p2_k4.prm
+Mode: monolithic single-domain reference solve
+CG converged in 35 iterations.
+H1 error vs. exact solution: 0.0191015
+
+
++---------------------------------------------+------------+------------+
+| Total wallclock time elapsed since start    |     0.263s |            |
+|                                             |            |            |
+| Section                         | no. calls |  wall time | % of total |
++---------------------------------+-----------+------------+------------+
+| monolithic: assembly            |         1 |    0.0428s |        16% |
+| monolithic: solve               |         1 |     0.211s |        80% |
++---------------------------------+-----------+------------+------------+
+

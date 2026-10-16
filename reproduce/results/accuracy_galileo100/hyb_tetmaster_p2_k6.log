@@ -1,0 +1,6 @@
+=== dealii-internodes: coupled_diffusion example ===
+Parameter file: /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy_galileo100/hyb_tetmaster_p2_k6.prm
+[2026-10-16T17:19:15.673] error: Detected 1 oom_kill event in StepId=22892822.0. Some of the step tasks have been OOM Killed.
+srun: error: r507c01n01: task 47: Out Of Memory
+srun: Terminating StepId=22892822.0
+[2026-10-16T17:19:15.885] error: *** STEP 22892822.0 ON r507c01n01 CANCELLED AT 2026-10-16T17:19:15 DUE TO TASK FAILURE ***
