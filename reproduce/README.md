@@ -87,6 +87,13 @@ The configuration of each test is in `test1.prm` … `test5.prm` (Table 1), with
 the refinement levels of the paper's scaling figures (`p1r8-p1r7`, `p2r7-p4r5`,
 …). Core counts default to the paper's $48, 96, 192, 240, 288, 384, 480, 768$.
 
+`prepare` always writes a job for every `--tests`/`--cores` combination it is
+given, whether or not a result already exists under that tag -- it does not
+skip cached cases. Resubmitting a combination overwrites its existing
+`results/scalability_<tag>/test<n>_np<cores>.json` once the new job finishes,
+rather than leaving the old one alone. The same holds for `accuracy.py
+prepare` below.
+
 ```bash
 # on the cluster (`prepare` and `run` need nothing but a Python 3; only `plot`
 # needs numpy/matplotlib, so plot on a laptop after pulling the results).
