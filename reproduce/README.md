@@ -32,7 +32,12 @@ candi build recipe before running anything below.
 | Strong scalability, Tests 1–5 (speed-up and time) | `<test>_scalability`, `<test>_total` | `scalability.py` |
 
 The mesh pictures of the paper (Geometry-A/B, the partitions) are ParaView
-screenshots and are not produced here.
+screenshots and are not produced here, but any run can export its own
+geometry and solution for inspection: set `Output VTU prefix` under `Run`
+in any `.prm` (e.g. `test1.prm`, or directly in `coupled_diffusion.prm`) to
+a non-empty prefix, and the converged master/slave solutions are written as
+`<prefix>_master`/`<prefix>_slave` `.pvtu`/`.vtu`, openable in ParaView
+(field `u`). Off by default -- none of the scripts here set it.
 
 ## Accuracy figures
 

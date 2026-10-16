@@ -55,3 +55,10 @@ subsection Solver
   set GMRES tolerance      = 1e-8
   set GMRES max iterations = 1000
 end
+
+subsection Run
+  # Set a non-empty prefix to also write the converged master/slave
+  # solutions as <prefix>_master/<prefix>_slave .pvtu/.vtu (field "u"),
+  # openable in ParaView. Off by default.
+  set Output VTU prefix =
+end

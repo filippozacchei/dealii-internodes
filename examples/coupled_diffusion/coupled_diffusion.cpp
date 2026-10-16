@@ -38,6 +38,7 @@
 #include <deal.II/grid/grid_tools.h>
 #include <deal.II/grid/tria.h>
 
+#include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/vector_tools.h>
 
 #include "internodes/internodes_schur_complement.hpp"
@@ -178,6 +179,13 @@ struct Parameters
   /// If not empty, a JSON file with sizes, errors, iterations and per-phase
   /// timings is written here (by rank 0).
   std::string results_file;
+
+  /// If not empty, the converged master/slave solutions are written as
+  /// <prefix>_master/<prefix>_slave .pvtu/.vtu (one .vtu per rank, openable
+  /// in ParaView). Off by default: none of the reproduce/ scripts need it,
+  /// and writing it on every one of the many short runs they launch would
+  /// only add I/O for files nobody looks at.
+  std::string output_vtu_prefix;
 
   static std::set<types::boundary_id>
   parse_ids(const std::string &s)
@@ -334,6 +342,12 @@ struct Parameters
                         Patterns::Anything(),
                         "If not empty, a JSON file with sizes, errors, "
                         "iteration counts and per-phase timings.");
+      prm.declare_entry("Output VTU prefix",
+                        "",
+                        Patterns::Anything(),
+                        "If not empty, write the converged master/slave "
+                        "solutions as <prefix>_master/<prefix>_slave "
+                        ".pvtu/.vtu, openable in ParaView. Off by default.");
     }
     prm.leave_subsection();
   }
@@ -395,6 +409,7 @@ struct Parameters
     {
       monolithic   = prm.get("Mode") == "monolithic";
       results_file = prm.get("Results file");
+      output_vtu_prefix = prm.get("Output VTU prefix");
     }
     prm.leave_subsection();
   }
@@ -481,6 +496,71 @@ build_hyper_shells(MeshHandler        &mesh,
     hex_tria, Point<dim>(), r_min, r_max, /* n_cells = */ 0, /* colorize = */ true);
 
   mesh.create(hex_tria, refinement);
+}
+
+/// Writes one subdomain's converged solution as a .pvtu/.vtu set (one .vtu
+/// per rank plus a .pvtu record tying them together), for inspection in
+/// ParaView. @p solution must be a fully reconstructed, DoFHandler-indexed,
+/// ghosted vector -- exactly what reconstruct_full_solution() in main()
+/// produces, which is also what the H1-error computation uses, so what
+/// this writes is the same field the reported error is computed from.
+void
+write_vtu(const SubProblemBase                &sub,
+         const TrilinosWrappers::MPI::Vector &solution,
+         const std::string                   &filename_prefix)
+{
+  // DataOut::add_data_vector() requires dof_handler->locally_owned_dofs()
+  // itself to be a contiguous range per rank, checked deep in deal.II
+  // (data_out_dof_data.templates.h's create_dof_vector(), which both the
+  // plain- and block-vector paths funnel through for each underlying
+  // Trilinos vector) independent of how the vector being added is
+  // partitioned. sub.dof_handler doesn't have that: its "setup:
+  // interface-DoFs-last renumbering" scatters each rank's share of
+  // interface DoFs away from its internal-DoF block. So attach a second,
+  // throwaway DoFHandler on the same triangulation and FE with *no*
+  // renumbering (standard distribute_dofs() does give a contiguous range),
+  // and copy @p solution across to it cell by cell -- both DoFHandlers
+  // traverse active_cell_iterators in the same order, since that order
+  // comes from the shared Triangulation, not from either DoFHandler.
+  DoFHandler<dim> dof_handler_plain(sub.slice->get());
+  dof_handler_plain.distribute_dofs(*sub.fe);
+
+  const IndexSet owned_plain = dof_handler_plain.locally_owned_dofs();
+  const IndexSet relevant_plain =
+    DoFTools::extract_locally_relevant_dofs(dof_handler_plain);
+
+  TrilinosWrappers::MPI::Vector solution_plain_owned(owned_plain, mpi_comm);
+
+  const unsigned int dofs_per_cell = sub.fe->n_dofs_per_cell();
+  std::vector<types::global_dof_index> renumbered_indices(dofs_per_cell);
+  std::vector<types::global_dof_index> plain_indices(dofs_per_cell);
+
+  auto cell_renumbered = sub.dof_handler->begin_active();
+  auto cell_plain       = dof_handler_plain.begin_active();
+  for (; cell_renumbered != sub.dof_handler->end();
+       ++cell_renumbered, ++cell_plain)
+    if (cell_renumbered->is_locally_owned())
+      {
+        cell_renumbered->get_dof_indices(renumbered_indices);
+        cell_plain->get_dof_indices(plain_indices);
+        for (unsigned int i = 0; i < dofs_per_cell; ++i)
+          if (owned_plain.is_element(plain_indices[i]))
+            solution_plain_owned[plain_indices[i]] =
+              solution[renumbered_indices[i]];
+      }
+  solution_plain_owned.compress(VectorOperation::insert);
+
+  TrilinosWrappers::MPI::Vector solution_plain(owned_plain,
+                                               relevant_plain,
+                                               mpi_comm);
+  solution_plain = solution_plain_owned;
+
+  DataOut<dim> data_out;
+  data_out.attach_dof_handler(dof_handler_plain);
+  data_out.add_data_vector(solution_plain, "u");
+  data_out.build_patches();
+  data_out.write_vtu_with_pvtu_record(
+    "./", filename_prefix, /* counter = */ 0, mpi_comm, /* n_digits = */ 2);
 }
 
 // =========================================================================
@@ -949,6 +1029,13 @@ main(int argc, char *argv[])
         reconstruct_full_solution(*master, solver.sol_master(), solver.lambda_master_());
       const TrilinosWrappers::MPI::Vector solution_slave =
         reconstruct_full_solution(*slave, solver.sol_slave(), solver.lambda_slave_());
+
+      if (!parameters.output_vtu_prefix.empty())
+        {
+          TimerOutput::Scope timer_section(timer_output(), "driver: VTU output");
+          write_vtu(*master, solution_master, parameters.output_vtu_prefix + "_master");
+          write_vtu(*slave, solution_slave, parameters.output_vtu_prefix + "_slave");
+        }
 
       std::vector<std::pair<std::string, SubdomainReport>> reports;
       double                                               error_squared = 0.0;
