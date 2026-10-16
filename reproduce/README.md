@@ -143,25 +143,29 @@ Table 4.
 
 ### Accuracy figures on the cluster
 
-The finest levels (5 and 6) can be run on one node with a batch script like
-this (errors do not depend on the machine or the rank count; the CPU-time
-figure does, so run all levels on the same machine):
+Like `scalability.py`, `accuracy.py` has a `prepare` command: one SLURM job
+per configuration instead of one long serial job, so a single slow or failed
+case doesn't hold up the rest. Errors do not depend on the machine or the
+rank count; the CPU-time figure (`RBF_radius_vs_time_hslave`) does, but all
+jobs here run on identical nodes of the same cluster, so that holds.
 
 ```bash
-#!/bin/bash
-#SBATCH --job-name=accuracy
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=48
-#SBATCH --time=12:00:00
-#SBATCH --account=<account>
-#SBATCH --partition=<partition>
-#SBATCH --output=accuracy.log
-unset SLURM_CPUS_PER_TASK SLURM_TRES_PER_TASK
-module load <mpi> <libraries>
-export INTERNODES_LAUNCHER="srun -n {np}"
-cd <path>/dealii-internodes/reproduce
-python3 accuracy.py run --max-level 6 --np 48 --timeout 28800 --tag galileo100
+# on the cluster (`prepare` and `run` need nothing but a Python 3; only `plot`
+# needs numpy/matplotlib). Submit from a fresh login shell: `env | grep SLURM`
+# should print nothing (see the scalability section above for why).
+python3 accuracy.py prepare --max-level 6 --np 48 --tag galileo100 \
+    --account <account> --partition <partition> \
+    --modules "module load <mpi> <libraries>" --time-limit 08:00:00
+bash results/accuracy_galileo100/submit_all.sh
+
+# once the jobs have finished, commit and pull as in "Getting results back"
+# below, then plot on a laptop
+python accuracy.py plot --tag galileo100
 ```
+
+`--figures` (comma-separated subset of conforming,p1p1,p2p3,gmres,hybrid)
+narrows this to specific figures, e.g. `--figures gmres` for just the
+preconditioned/unpreconditioned GMRES comparison.
 
 The results are in `results/accuracy_galileo100/`; plot them with
 `python accuracy.py plot --tag galileo100`.

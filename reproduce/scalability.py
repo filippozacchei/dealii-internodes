@@ -40,7 +40,7 @@ try:
 except ImportError:
     np = style = None
 
-from lib import ROOT, read_prm, run_case  # noqa: E402
+from lib import ROOT, add_cluster_args, job_script, read_prm, run_case, write_submit_all  # noqa: E402
 
 def _results_dir(tag=None):
     return ROOT / "results" / (f"scalability_{tag}" if tag else "scalability")
@@ -98,38 +98,13 @@ def test_sections(n, levels_down=0):
     return sections
 
 
-def job_script(name, np_, prm, args, results):
-    nodes = -(-np_ // args.cores_per_node)
-    lines = [
-        "#!/bin/bash",
-        f"#SBATCH --job-name={name}",
-        f"#SBATCH --nodes={nodes}",
-        f"#SBATCH --ntasks-per-node={min(np_, args.cores_per_node)}",
-        f"#SBATCH --time={args.time_limit}",
-        f"#SBATCH --output={results / name}.log",
-    ]
-    if args.account:
-        lines.append(f"#SBATCH --account={args.account}")
-    if args.partition:
-        lines.append(f"#SBATCH --partition={args.partition}")
-    # sbatch passes on the submitting shell's environment; a SLURM_CPUS_PER_TASK
-    # left over from an earlier `salloc --cpus-per-task=...` there would make
-    # srun ask for (ntasks x that) cores ("More processors requested than
-    # permitted"), so drop it.
-    lines.append("unset SLURM_CPUS_PER_TASK SLURM_TRES_PER_TASK")
-    if args.modules:
-        lines.append(args.modules)
-    lines.append(f"{args.launcher} {args.exe} {prm}")
-    return "\n".join(lines) + "\n"
-
-
 def prepare(args):
     from lib import DEFAULT_EXE, prm_text
 
     args.exe = args.exe or DEFAULT_EXE
     results = _results_dir(args.tag)
     results.mkdir(parents=True, exist_ok=True)
-    submit = ["#!/bin/bash", f"cd {ROOT}"]
+    names = []
     for n in map(int, args.tests.split(",")):
         for p in map(int, args.cores.split(",")):
             name = f"test{n}_np{p}"
@@ -139,9 +114,9 @@ def prepare(args):
             prm.write_text(prm_text(sections))
             script = results / f"{name}.sh"
             script.write_text(job_script(name, p, prm, args, results))
-            submit.append(f"sbatch {script}")
-    (results / "submit_all.sh").write_text("\n".join(submit) + "\n")
-    print(f"Wrote {len(submit) - 2} jobs to {results}; submit them with: bash {results / 'submit_all.sh'}")
+            names.append(name)
+    submit = write_submit_all(results, names)
+    print(f"Wrote {len(names)} jobs to {results}; submit them with: bash {submit}")
 
 
 def run_local(args):
@@ -240,13 +215,7 @@ def main():
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--retry-failed", action="store_true")
     parser.add_argument("--timeout", type=float, default=3600, help="seconds per local run")
-    cluster = parser.add_argument_group("prepare (SLURM)")
-    cluster.add_argument("--account")
-    cluster.add_argument("--partition")
-    cluster.add_argument("--modules", help='line(s) put before the launch, e.g. "module load openmpi dealii"')
-    cluster.add_argument("--cores-per-node", type=int, default=48)
-    cluster.add_argument("--time-limit", default="04:00:00")
-    cluster.add_argument("--launcher", default="srun", help="MPI launcher in the batch scripts (default srun)")
+    add_cluster_args(parser)
     args = parser.parse_args()
 
     if args.command == "prepare":

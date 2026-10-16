@@ -5,6 +5,14 @@
     python accuracy.py plot [--formats pdf,png]
     python accuracy.py all
 
+On a cluster (SLURM), one job per configuration instead of one long serial
+`run`, the same pattern as scalability.py:
+
+    python accuracy.py prepare --account <account> --partition <partition> \\
+        [--modules "module load ..."] [--np 48] [--max-level 6] [--figures all]
+    bash results/accuracy/submit_all.sh          # afterwards
+    python accuracy.py plot
+
 `run` executes the coupled_diffusion example for every configuration behind
 the figures (results are cached as JSON in results/accuracy, so it can be
 interrupted and restarted); `plot` draws the figures into figures/accuracy
@@ -44,7 +52,7 @@ try:
 except ImportError:
     np = style = None
 
-from lib import ROOT, box_case, run_case  # noqa: E402
+from lib import ROOT, add_cluster_args, box_case, job_script, run_case, write_submit_all  # noqa: E402
 
 def _results_dir(tag=None):
     return ROOT / "results" / (f"accuracy_{tag}" if tag else "accuracy")
@@ -337,7 +345,9 @@ def plot_all(formats, paper_labels=False):
 
 
 # ---------------------------------------------------------------------------
-def run_all(args):
+def unique_cases(args):
+    """(name, sections) of every case behind args.figures, deduplicated (a
+    case can be shared by more than one figure)."""
     keys = FIGURE_KEYS if args.figures == "all" else args.figures.split(",")
     todo = []
     for key in keys:
@@ -347,6 +357,31 @@ def run_all(args):
         if name not in seen:
             seen.add(name)
             unique.append((name, sections))
+    return unique
+
+
+def prepare(args):
+    from lib import DEFAULT_EXE, prm_text
+
+    args.exe = args.exe or DEFAULT_EXE
+    unique = unique_cases(args)
+    RESULTS.mkdir(parents=True, exist_ok=True)
+    names = []
+    for name, sections in unique:
+        sections = {k: dict(v) for k, v in sections.items()}
+        sections.setdefault("Run", {})["Results file"] = str(RESULTS / f"{name}.json")
+        prm = RESULTS / f"{name}.prm"
+        prm.write_text(prm_text(sections))
+        script = RESULTS / f"{name}.sh"
+        script.write_text(job_script(name, args.np, prm, args, RESULTS))
+        names.append(name)
+    submit = write_submit_all(RESULTS, names)
+    print(f"Wrote {len(names)} jobs to {RESULTS} (np={args.np}, levels up to {args.max_level}); "
+          f"submit them with: bash {submit}")
+
+
+def run_all(args):
+    unique = unique_cases(args)
     print(f"{len(unique)} configurations (np={args.np}, levels up to {args.max_level}); results in {RESULTS}")
     for name, sections in unique:
         run_case(
@@ -363,8 +398,8 @@ def run_all(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=("run", "plot", "all"))
-    parser.add_argument("--np", type=int, default=4, help="MPI ranks per run (default 4)")
+    parser.add_argument("command", choices=("prepare", "run", "plot", "all"))
+    parser.add_argument("--np", type=int, default=4, help="MPI ranks per run (default 4; paper: 48)")
     parser.add_argument("--max-level", type=int, default=4, help="finest refinement level (paper: 6; default 4)")
     parser.add_argument("--timeout", type=float, default=1800, help="seconds allowed per run (default 1800)")
     parser.add_argument("--figures", default="all", help=f"comma-separated subset of {','.join(FIGURE_KEYS)}")
@@ -374,6 +409,7 @@ def main():
     parser.add_argument("--formats", default="pdf,png", help="output formats (default pdf,png; the paper uses eps)")
     parser.add_argument("--paper-labels", action="store_true", help="label the x axis of the non-conforming figures h_2, as the paper does")
     parser.add_argument("--tag", default=None, help="keep results in results/accuracy_<tag> instead of results/accuracy (e.g. --tag galileo100 for runs to be committed; see the README)")
+    add_cluster_args(parser)
     args = parser.parse_args()
 
     global RESULTS
@@ -381,6 +417,8 @@ def main():
 
     if args.command in ("plot", "all") and style is None:
         sys.exit("plot needs numpy and matplotlib: pip install -r requirements.txt")
+    if args.command == "prepare":
+        prepare(args)
     if args.command in ("run", "all"):
         run_all(args)
     if args.command in ("plot", "all"):

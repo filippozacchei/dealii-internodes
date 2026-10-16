@@ -114,6 +114,56 @@ def box_case(
     }
 
 
+def job_script(name, np_, prm, args, results):
+    """SLURM batch script running one case (prm) on np_ ranks, from the
+    --account/--partition/--modules/--cores-per-node/--time-limit/--launcher
+    arguments shared by scalability.py's and accuracy.py's `prepare`."""
+    nodes = -(-np_ // args.cores_per_node)
+    lines = [
+        "#!/bin/bash",
+        f"#SBATCH --job-name={name}",
+        f"#SBATCH --nodes={nodes}",
+        f"#SBATCH --ntasks-per-node={min(np_, args.cores_per_node)}",
+        f"#SBATCH --time={args.time_limit}",
+        f"#SBATCH --output={results / name}.log",
+    ]
+    if args.account:
+        lines.append(f"#SBATCH --account={args.account}")
+    if args.partition:
+        lines.append(f"#SBATCH --partition={args.partition}")
+    # sbatch passes on the submitting shell's environment; a SLURM_CPUS_PER_TASK
+    # left over from an earlier `salloc --cpus-per-task=...` there would make
+    # srun ask for (ntasks x that) cores ("More processors requested than
+    # permitted"), so drop it.
+    lines.append("unset SLURM_CPUS_PER_TASK SLURM_TRES_PER_TASK")
+    if args.modules:
+        lines.append(args.modules)
+    lines.append(f"{args.launcher} {args.exe} {prm}")
+    return "\n".join(lines) + "\n"
+
+
+def add_cluster_args(parser):
+    """--account/--partition/--modules/--cores-per-node/--time-limit/--launcher,
+    shared by scalability.py's and accuracy.py's `prepare`."""
+    cluster = parser.add_argument_group("prepare (SLURM)")
+    cluster.add_argument("--account")
+    cluster.add_argument("--partition")
+    cluster.add_argument("--modules", help='line(s) put before the launch, e.g. "module load openmpi dealii"')
+    cluster.add_argument("--cores-per-node", type=int, default=48)
+    cluster.add_argument("--time-limit", default="04:00:00")
+    cluster.add_argument("--launcher", default="srun", help="MPI launcher in the batch scripts (default srun)")
+    return cluster
+
+
+def write_submit_all(results, names):
+    """submit_all.sh over the given job names (<name>.sh must exist in results);
+    returns its path."""
+    submit = ["#!/bin/bash", f"cd {ROOT}"] + [f"sbatch {results / f'{n}.sh'}" for n in names]
+    path = results / "submit_all.sh"
+    path.write_text("\n".join(submit) + "\n")
+    return path
+
+
 def run_case(
     name,
     sections,
