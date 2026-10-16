@@ -3,11 +3,7 @@
 Scripts that regenerate the numerical-results figures of the paper from this
 code: run the configurations behind each figure, cache the results as JSON,
 and draw the figures under the file names used in the paper (same axes,
-series, markers and colours). **They are not meant to be run by a reviewer**:
-the finest levels and the scalability tests need a workstation or an HPC
-cluster (the paper's runs used up to 768 MPI processes on CINECA's Galileo100,
-48 cores per node). A scaled-down version of everything runs on a laptop, as
-a check that the scripts work.
+series, markers and colours).
 
 ## Setup
 
@@ -43,9 +39,14 @@ screenshots and are not produced here.
 ```bash
 cd reproduce
 python accuracy.py all --np 4 --max-level 4      # laptop: levels up to 4, about an hour
-python accuracy.py run --max-level 6 --np 48     # the paper's levels (workstation / cluster)
+python accuracy.py run --max-level 6 --np 48     # the paper's levels, on a workstation
 python accuracy.py plot --formats pdf,png,eps    # figures/accuracy/
 ```
+
+On a cluster, don't run the command above directly: it calls `mpirun`/`srun`
+itself, so typed into a login shell it runs there, not as a submitted job.
+Use `accuracy.py prepare` instead, one SLURM job per configuration — see
+"Accuracy figures on the cluster" below.
 
 `run` caches each configuration in `results/accuracy/<case>.json` (with its
 `.prm` and `.log`), so an interrupted run restarts where it stopped; runs that
