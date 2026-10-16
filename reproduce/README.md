@@ -82,7 +82,7 @@ them against your own runs):
 
 ## Scalability figures
 
-The configuration of each test is in `test1.prm` … `test5.prm` (Table 4), with
+The configuration of each test is in `test1.prm` … `test5.prm` (Table 1), with
 the refinement levels of the paper's scaling figures (`p1r8-p1r7`, `p2r7-p4r5`,
 …). Core counts default to the paper's $48, 96, 192, 240, 288, 384, 480, 768$.
 
@@ -105,7 +105,7 @@ python3 scalability.py prepare --tests 1,2,3 --cores 48,96 --levels-down 3 --tag
 bash results/scalability_galileo100-smoke/submit_all.sh
 # check results/scalability_galileo100-smoke/test{1,2,3}_np{48,96}.json exist and parse
 
-# 2. the real sweep (Table 4 sizes), smallest core count first to learn the
+# 2. the real sweep (Table 1 sizes), smallest core count first to learn the
 #    run time and memory (sacct -j <id> --format=JobID,Elapsed,MaxRSS,State)
 python3 scalability.py prepare --tests 1,2,3 --cores 48 --tag galileo100 \
        --account <account> --partition <partition> \
@@ -136,10 +136,12 @@ time plot is normalised to 1 s at $p_0$, as in the paper. Note that the
 algorithm assembles the subdomain matrices three times per solve, and the
 "Assembly Internal Operators" time is the sum over the three.
 
-Tests 4 and 5 (Geometry B, tetrahedra) use, until the Gmsh meshes are
-available, the hexahedral half shell split into tetrahedra with placeholder
-refinement levels (`Shell refinement`), so their DoF counts differ from
-Table 4.
+Tests 4 and 5 (Geometry B) use deal.II's own `GridGenerator::hyper_shell`
+(hexahedral, a full concentric shell, matching lifex's own
+`initialize_hyper_shell`, not a file read from Gmsh or elsewhere). The
+`Shell refinement` levels in `test4.prm`/`test5.prm` were chosen by matching
+the slave's DoF count to Table 1's (exact at the chosen level), with the
+master one level finer, as Tests 1–3 do.
 
 ### Accuracy figures on the cluster
 
@@ -207,7 +209,8 @@ used as the password, or an SSH key) and `git config user.name` /
 | `test5.prm` | 5 | B | 2 | 2 | RL-RBF | 10 |
 
 They can also be run directly, `mpirun -np N ./coupled_diffusion reproduce/test1.prm`.
-Tests 1–3 reproduce the master DoF counts of Table 4 exactly ($257^3$).
+Tests 1–3 reproduce the master DoF counts of Table 1 exactly ($257^3$).
 Geometry-A meshes are a single coarse cell per subdomain, refined globally on
-the distributed mesh; Geometry-B meshes come from deal.II's half hyper-shell
-split into tetrahedra, since the paper's Gmsh meshes are not available here.
+the distributed mesh; Geometry-B meshes are deal.II's own
+`GridGenerator::hyper_shell` (hexahedral, full concentric shells), matching
+lifex's own mesh construction for the same geometry.

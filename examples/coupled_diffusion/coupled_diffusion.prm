@@ -11,7 +11,7 @@
 # master and slave different (and set an RBF radius, see below).
 #
 # To try Geometry-B (curved, geometrically non-conforming interface): set
-# Geometry/Type = half_hyper_shells and Discretization/RBF radius to
+# Geometry/Type = hyper_shells and Discretization/RBF radius to
 # something > 0 (Lagrange interpolation does not apply to non-conforming
 # interfaces).
 

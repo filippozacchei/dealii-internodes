@@ -113,7 +113,7 @@ public:
 enum class GeometryType
 {
   adjacent_boxes,
-  half_hyper_shells
+  hyper_shells
 };
 
 struct Parameters
@@ -131,7 +131,7 @@ struct Parameters
   unsigned int global_refinement_master = 0;
   unsigned int global_refinement_slave  = 0;
 
-  // -- half_hyper_shells --
+  // -- hyper_shells --
   double inner_radius     = 0.5;
   double interface_radius = 0.75;
   double outer_radius     = 1.0;
@@ -209,10 +209,10 @@ struct Parameters
     {
       prm.declare_entry("Type",
                         "adjacent_boxes",
-                        Patterns::Selection("adjacent_boxes|half_hyper_shells"),
+                        Patterns::Selection("adjacent_boxes|hyper_shells"),
                         "Which pair of subdomains to build: two adjacent "
                         "boxes with a flat interface (matches the paper's "
-                        "Geometry-A), or two half hyper-shells with a "
+                        "Geometry-A), or two concentric hyper-shells with a "
                         "curved, geometrically non-conforming interface "
                         "(matches the paper's Geometry-B).");
       prm.declare_entry("Subdivisions master",
@@ -343,8 +343,8 @@ struct Parameters
   {
     prm.enter_subsection("Geometry");
     {
-      geometry = prm.get("Type") == "half_hyper_shells" ?
-                   GeometryType::half_hyper_shells :
+      geometry = prm.get("Type") == "hyper_shells" ?
+                   GeometryType::hyper_shells :
                    GeometryType::adjacent_boxes;
       subdivisions_master   = parse_subdivisions(prm.get("Subdivisions master"));
       subdivisions_slave    = parse_subdivisions(prm.get("Subdivisions slave"));
@@ -439,56 +439,48 @@ build_adjacent_boxes(MeshHandler                     &mesh,
   mesh.create(simplex_tria);
 }
 
-/// Geometry-B: two half hyper-shells (annuli split by a plane through the
-/// origin), sharing the curved interface at radius `interface_radius`.
-/// deal.II's half_hyper_shell colorizes: 0 = inner surface, 1 = outer
-/// surface, 2 = the flat cut face(s). Since master/slave are independently
-/// meshed half-shells of different radial extent, the shared spherical
-/// interface is geometrically non-conforming even though it is
-/// mathematically the same sphere -- this is the paper's Geometry-B case,
-/// and requires RBF interpolation (RBF radius > 0), not Lagrange.
+/// Geometry-B: two concentric hyper-shells (spherical annuli), sharing the
+/// curved interface at radius `interface_radius`. Hexahedral, matching
+/// lifex's own construction (lifex::utils::MeshHandler::
+/// initialize_hyper_shell(), a thin wrapper over GridGenerator::hyper_shell())
+/// -- *not* tetrahedral, and *not* cut by a plane. An earlier version of
+/// this function built a half-shell and converted it to tetrahedra, on the
+/// mistaken assumption that the paper's Geometry-B meshes were externally
+/// generated tetrahedra; the paper's own figure (a full concentric sphere,
+/// quadrilateral surface cells) and lifex's mesh_handler.cpp (GeometryType::
+/// HyperShell maps straight to GridGenerator::hyper_shell(), hexahedral only
+/// -- tetrahedra in lifex are only ever read from a file, never generated)
+/// both show this was wrong.
 ///
-/// The paper's actual Geometry-B meshes are *tetrahedral*, generated
-/// externally with Gmsh, not the hexahedral cells GridGenerator::
-/// half_hyper_shell produces directly. Lacking the original Gmsh files,
-/// this builds the hex half-shell on a temporary serial triangulation,
-/// converts it to a genuinely tetrahedral mesh via
-/// GridGenerator::convert_hypercube_to_simplex_mesh() (which preserves
-/// boundary ids across the conversion), and only then distributes it into
-/// the parallel::distributed::Triangulation MeshHandler owns -- so the
-/// *cell type* matches the paper even though the exact mesh (vertex
-/// positions, cell count) does not.
+/// deal.II's hyper_shell colorizes (colorize=true): 0 = inner surface,
+/// 1 = outer surface -- no other boundary, since there is no cut. Master
+/// occupies [inner,interface], slave occupies [interface,outer], so
+/// master's outer surface and slave's inner surface are the shared,
+/// independently meshed (hence geometrically non-conforming) interface --
+/// this is the paper's Geometry-B case, and requires RBF interpolation
+/// (RBF radius > 0), not Lagrange.
+///
+/// GridGenerator::hyper_shell() attaches a SphericalManifold itself, to
+/// every cell and face; it is kept (unlike the old tetrahedral version,
+/// which had to strip it, since simplices cannot carry one here), so that
+/// MeshHandler::create()'s refine_global() places new vertices on the true
+/// sphere rather than at straight-line midpoints of the coarse mesh.
 void
-build_half_hyper_shells(MeshHandler        &mesh,
-                        bool                is_master,
-                        double              inner_radius,
-                        double              interface_radius,
-                        double              outer_radius,
-                        unsigned int        refinement)
+build_hyper_shells(MeshHandler        &mesh,
+                   bool                is_master,
+                   double              inner_radius,
+                   double              interface_radius,
+                   double              outer_radius,
+                   unsigned int        refinement)
 {
   const double r_min = is_master ? inner_radius : interface_radius;
   const double r_max = is_master ? interface_radius : outer_radius;
 
   Triangulation<dim> hex_tria;
-  GridGenerator::half_hyper_shell(
+  GridGenerator::hyper_shell(
     hex_tria, Point<dim>(), r_min, r_max, /* n_cells = */ 0, /* colorize = */ true);
-  hex_tria.refine_global(refinement);
 
-  Triangulation<dim> simplex_tria;
-  GridGenerator::convert_hypercube_to_simplex_mesh(hex_tria, simplex_tria);
-
-  // The hex half-shell carries a SphericalManifold (used above to place the
-  // refined vertices on the sphere); the conversion keeps the manifold *ids*
-  // on the cells but not the manifold object. The paper's Gmsh tetrahedra
-  // are plain straight-sided linear tets, so drop to flat manifolds -- the
-  // curved-vertex placement has already been done by the refinement.
-  // (reset_all_manifolds() alone only removes the manifold *objects*; the
-  // manifold *ids* on cells/faces would still refer to the removed
-  // SphericalManifold, so they must be reset to flat explicitly too.)
-  simplex_tria.set_all_manifold_ids(numbers::flat_manifold_id);
-  simplex_tria.reset_all_manifolds();
-
-  mesh.create(simplex_tria);
+  mesh.create(hex_tria, refinement);
 }
 
 // =========================================================================
@@ -582,7 +574,7 @@ write_results(const Parameters                                              &par
   out << "  \"mode\": \"" << (parameters.monolithic ? "monolithic" : "coupled") << "\",\n";
   out << "  \"geometry\": \""
       << (parameters.geometry == GeometryType::adjacent_boxes ? "adjacent_boxes" :
-                                                                 "half_hyper_shells")
+                                                                 "hyper_shells")
       << "\",\n";
   out << "  \"n_mpi_ranks\": " << Utilities::MPI::n_mpi_processes(mpi_comm) << ",\n";
   out << "  \"interpolation\": \""
@@ -826,18 +818,18 @@ main(int argc, char *argv[])
         }
       else
         {
-          build_half_hyper_shells(*mesh_master,
-                                  true,
-                                  parameters.inner_radius,
-                                  parameters.interface_radius,
-                                  parameters.outer_radius,
-                                  parameters.shell_refinement_master);
-          build_half_hyper_shells(*mesh_slave,
-                                  false,
-                                  parameters.inner_radius,
-                                  parameters.interface_radius,
-                                  parameters.outer_radius,
-                                  parameters.shell_refinement_slave);
+          build_hyper_shells(*mesh_master,
+                             true,
+                             parameters.inner_radius,
+                             parameters.interface_radius,
+                             parameters.outer_radius,
+                             parameters.shell_refinement_master);
+          build_hyper_shells(*mesh_slave,
+                             false,
+                             parameters.inner_radius,
+                             parameters.interface_radius,
+                             parameters.outer_radius,
+                             parameters.shell_refinement_slave);
         }
 
       const auto forcing_term = std::make_shared<Forcing>();
