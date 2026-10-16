@@ -16,6 +16,14 @@ look for `build/examples/coupled_diffusion/coupled_diffusion`, or use
 `--exe` / `INTERNODES_EXE`. MPI runs are started with `mpirun -np N`; set
 `INTERNODES_LAUNCHER="srun -n {np}"` (for instance) to change that.
 
+**After every `git pull`, rebuild (`cd build && make`) before running
+anything below.** An out-of-date binary doesn't fail loudly: it just
+rejects any `.prm` option added since it was last built with a generic
+"does not match the pattern" parse error, which looks like a bad `.prm`
+file rather than a stale build. This has bitten a full batch of cluster
+jobs before (all of Tests 4-5 failing this way, once); checking is cheap,
+re-running a whole sweep because of it is not.
+
 On a cluster with no existing deal.II install, see `CLUSTER_SETUP.md` for a
 candi build recipe before running anything below.
 
@@ -160,17 +168,28 @@ master one level finer, as Tests 1–3 do.
 
 Like `scalability.py`, `accuracy.py` has a `prepare` command: one SLURM job
 per configuration instead of one long serial job, so a single slow or failed
-case doesn't hold up the rest. Errors do not depend on the machine or the
-rank count; the CPU-time figure (`RBF_radius_vs_time_hslave`) does, but all
-jobs here run on identical nodes of the same cluster, so that holds.
+case doesn't hold up the rest. Errors mostly don't depend on the machine or
+the rank count; the CPU-time figure (`RBF_radius_vs_time_hslave`) does, but
+all jobs here run on identical nodes of the same cluster, so that holds. One
+group needs more ranks than the rest, see below.
 
 ```bash
 # on the cluster (`prepare` and `run` need nothing but a Python 3; only `plot`
 # needs numpy/matplotlib). Submit from a fresh login shell: `env | grep SLURM`
 # should print nothing (see the scalability section above for why).
-python3 accuracy.py prepare --max-level 6 --np 48 --tag galileo100 \
-    --account <account> --partition <partition> \
+python3 accuracy.py prepare --figures conforming,p1p1,p2p3,gmres --max-level 6 --np 48 \
+    --tag galileo100 --account <account> --partition <partition> \
     --modules "module load <mpi> <libraries>" --time-limit 08:00:00
+bash results/accuracy_galileo100/submit_all.sh
+
+# hybrid separately, at more ranks: splitting each hexahedron of the master
+# mesh into tetrahedra multiplies its cell count several times over, and at
+# the finest level (k=6) this OOM'd 48 ranks on one node; 192 has the
+# headroom. The lower levels don't need it, but running the whole group at
+# one rank count is simpler than splitting it further.
+python3 accuracy.py prepare --figures hybrid --max-level 6 --np 192 \
+    --tag galileo100 --account <account> --partition <partition> \
+    --modules "module load <mpi> <libraries>" --time-limit 04:00:00
 bash results/accuracy_galileo100/submit_all.sh
 
 # once the jobs have finished, commit and pull as in "Getting results back"

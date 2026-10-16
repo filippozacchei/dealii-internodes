@@ -358,6 +358,13 @@ make -j 8 coupled_diffusion
 p4est support — if that happens, double check `--packages` above included
 both.
 
+This is a one-time step, not a one-time *build*: `git pull`ing new
+dealii-internodes code later does not rebuild `coupled_diffusion`, and
+running against a stale binary fails silently-ish (a generic
+ParameterHandler "does not match the pattern" error, not a "rebuild me"
+message) rather than cleanly. Re-run `make -j 8 coupled_diffusion` in
+`build/` after every pull, before queuing anything (see reproduce/README.md).
+
 ## 4. Check the executable runs under the cluster's launcher
 
 Before queuing anything from `scalability.py`, confirm the binary actually
