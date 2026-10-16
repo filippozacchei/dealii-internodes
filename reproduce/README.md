@@ -170,8 +170,31 @@ python accuracy.py plot --tag galileo100
 narrows this to specific figures, e.g. `--figures gmres` for just the
 preconditioned/unpreconditioned GMRES comparison.
 
+A further group, `gmres_check`, is not one of the paper's figures and
+produces no plot -- it only caches JSON, as a direct consistency check of
+the iteration counts behind `GMRES_iterations_precond_vs_unprecond`. That
+figure (`--figures gmres`) reads the paper's "same mesh and polynomial
+degree as the previous test case" as $p_1=p_2=2$ with Lagrange
+interpolation; `gmres_check` instead takes "the previous test case"
+literally, at the P2/P3 study's own degrees ($p_1=2$, $p_2=3$), Lagrange
+only, with and without the preconditioner:
+
+```bash
+python3 accuracy.py prepare --figures gmres_check --max-level 6 --np 48 \
+    --tag galileo100 --account <account> --partition <partition> \
+    --modules "module load <mpi> <libraries>" --time-limit 02:00:00
+bash results/accuracy_galileo100/submit_all.sh
+```
+
+Lagrange only, not RBF: an RBF stencil sized for the $p_2=3$ slave needs
+$r_f=10$ ($r_f=1$ undersizes it, see the P2/P3 assumptions above), and the
+unpreconditioned GMRES solve at that radius is prohibitively slow to
+actually launch -- the Lagrange rows alone already answer the question
+this check is for.
+
 The results are in `results/accuracy_galileo100/`; plot them with
-`python accuracy.py plot --tag galileo100`.
+`python accuracy.py plot --tag galileo100` (`gmres_check`'s own JSON is read
+by hand, not by `plot`).
 
 ### Getting results back
 

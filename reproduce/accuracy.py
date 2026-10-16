@@ -115,30 +115,22 @@ def cases(key, max_level):
         # paper's "same progressive mesh configuration as in the previous
         # test case [and] polynomial degree p=2" as p=2/p=2 (see README.md).
         # This instead takes "the previous test case" literally: p1=2, p2=3,
-        # the P2/P3 study's own degrees, both Lagrange and RBF r_f=1, with
-        # and without the preconditioner -- if the gmres iteration counts
-        # disagree with the paper's regardless of which reading is used,
-        # that argues against the discrepancy being a wrong-configuration
-        # mistake; Lagrange vs RBF here is also a check that the two
-        # interpolation choices don't condition the Schur system differently.
+        # the P2/P3 study's own degrees, with and without the preconditioner
+        # -- if the gmres iteration counts disagree with the paper's
+        # regardless of which reading is used, that argues against the
+        # discrepancy being a wrong-configuration mistake.
+        #
+        # Lagrange only, not RBF: an RBF stencil sized for the p2=3 slave
+        # needs r_f=10 (r_f=1 undersizes it, see the P2/P3 assumptions
+        # above), and the unpreconditioned GMRES solve at that radius is
+        # prohibitively slow to actually launch -- the Lagrange rows alone
+        # already answer the question this check is for.
         for k in nonconforming_levels(max_level):
             out.append((f"gmres_check_p23_lag_pc_k{k}", box_case(k, k - 1, master_degree=2, slave_degree=3)))
             out.append(
                 (
                     f"gmres_check_p23_lag_nopc_k{k}",
                     box_case(k, k - 1, master_degree=2, slave_degree=3, preconditioner=False),
-                )
-            )
-            out.append(
-                (
-                    f"gmres_check_p23_rbf1_pc_k{k}",
-                    box_case(k, k - 1, master_degree=2, slave_degree=3, rbf_factor=1),
-                )
-            )
-            out.append(
-                (
-                    f"gmres_check_p23_rbf1_nopc_k{k}",
-                    box_case(k, k - 1, master_degree=2, slave_degree=3, rbf_factor=1, preconditioner=False),
                 )
             )
     elif key == "hybrid":
