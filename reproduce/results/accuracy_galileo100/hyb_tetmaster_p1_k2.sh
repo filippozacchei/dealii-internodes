@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=hyb_tetmaster_p1_k2
-#SBATCH --nodes=1
+#SBATCH --nodes=4
 #SBATCH --ntasks-per-node=48
-#SBATCH --time=08:00:00
+#SBATCH --time=04:00:00
 #SBATCH --output=/g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy_galileo100/hyb_tetmaster_p1_k2.log
 #SBATCH --account=uBS26_MatGer
 #SBATCH --partition=g100_usr_prod
