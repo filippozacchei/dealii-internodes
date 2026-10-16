@@ -184,9 +184,12 @@ bash results/accuracy_galileo100/submit_all.sh
 
 # hybrid separately, at more ranks: splitting each hexahedron of the master
 # mesh into tetrahedra multiplies its cell count several times over, and at
-# the finest level (k=6) this OOM'd 48 ranks on one node; 192 has the
-# headroom. The lower levels don't need it, but running the whole group at
-# one rank count is simpler than splitting it further.
+# the finest level (k=6) this OOM'd 48 ranks on one node; 192 still OOM'd for
+# tetmaster (the master mesh is the finer one there), so accuracy.py caps
+# that orientation at k=5 -- hexmaster (coarser mesh tet-split) reaches k=6
+# fine at 192 ranks. The lower levels don't need 192 ranks either way, but
+# running the whole group at one rank count is simpler than splitting it
+# further.
 python3 accuracy.py prepare --figures hybrid --max-level 6 --np 192 \
     --tag galileo100 --account <account> --partition <partition> \
     --modules "module load <mpi> <libraries>" --time-limit 04:00:00

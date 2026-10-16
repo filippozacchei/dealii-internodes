@@ -215,6 +215,67 @@ use.
   substitute for testing on the MPI implementation reviewers or an HPC
   cluster will actually use.
 
+## Improving scalability
+
+Three distinct bottlenecks found while auditing the code against the paper's
+scalability results (none of these are correctness issues — see "Notes on
+the port" above for the from-scratch code audit).
+
+- **`compute_map_union()` broadcasts the destination-point map to every
+  rank, not just the ranks that need it.** `setup_destination_points()`, in
+  both `interface_dof_handler.cpp` and `interface_dof_handler_rbf.cpp`,
+  calls `compute_map_union()` (`utilities.hpp`), which does an `all_gather`
+  and merges every rank's local contribution onto every rank — by design
+  ("fully-populated map on every process", per its own doc comment).
+  `interpolate()` afterward only ever looks up locally-owned indices
+  (`dst.locally_owned_elements().is_element(i)`), so every rank pays to
+  receive, store and merge entries it never reads. The communication volume
+  and the serial merge loop both scale with the *total* problem size, not
+  the local partition — a weak-scaling liability that gets worse specifically
+  as rank count grows, and the likely reason the high-rank-count (192)
+  scalability runs were the hardest to get to finish cleanly. Cheap fix:
+  filter the merged result down to the caller's locally-owned index set
+  before returning (kills the memory/merge cost, not the `all_gather`
+  itself). Real fix: replace the all-to-all gather with a point-to-point
+  exchange so each rank only ever receives what it owns.
+- **The Lagrange `setup_destination_points()` has no spatial acceleration.**
+  It loops over every locally-owned interface cell and tests every *global*
+  destination point against it (`cell->point_inside(points[i])`,
+  `interface_dof_handler.cpp:183-221`) — brute-force, O(local cells × global
+  points). The RBF path already builds an `RTreeHandler` for the equivalent
+  query; the Lagrange path doesn't. Same weak-scaling shape as above (per-rank
+  cost grows with total problem size), just in the search step instead of the
+  communication step. Affects every conforming/p1p1/p2p3 test, since those use
+  the Lagrange interface handler. Fix: reuse `RTreeHandler` here too.
+- **Φ's CG iteration count costs one global `allreduce` per iteration.** At
+  the radius/degree combinations needed for accuracy, Φ needs thousands of CG
+  iterations per solve (233,620 total across 16 solves at k=6, RBF radius
+  factor 10). Each iteration needs a global reduction for the CG dot
+  products — a fixed latency cost independent of rank count — so as ranks
+  increase on a fixed problem (strong scaling) this specifically erodes
+  parallel efficiency, separately from the extra wall-clock.
+  **This can be addressed without changing the RL-RBF method or its
+  formulas**: Φ is fixed for the lifetime of a GMRES solve, and only the
+  right-hand side changes between `interpolate()` calls (one per outer GMRES
+  iteration) — so the ~hundred CG+AMG solves against the *same* Φ in a single
+  run are exactly the situation a one-time **direct factorization** is suited
+  to. Φ is symmetric positive definite; Amesos/KLU or MUMPS are already
+  linked via Trilinos (currently used only as the AMG coarse solver). Factor
+  once, and every subsequent solve becomes a cheap back-substitution with no
+  outer iterations and no per-iteration allreduce at all. This also sidesteps
+  the actual problem CG+AMG has here — a direct factorization doesn't degrade
+  the way iterative methods do when the matrix is near-dense/ill-conditioned —
+  and Φ is interface-sized (one dimension lower than the volume problem), so
+  the extra fill-in/memory is bounded by the interface size, not the full 3-D
+  problem. Caveats: parallel sparse direct solvers have their own scaling
+  limits at very high rank counts, and storing the factors of a near-dense Φ
+  costs close to a dense matrix's memory — worth measuring on the actual Φ
+  sizes in the scalability configs before committing to it. A smaller,
+  already-measured incremental option on the existing CG+AMG approach:
+  tuning `aggregation_threshold` (0.3 vs. the default 1e-2) gives ~13%
+  improvement, same-machine/same-rank-count comparison — it softens the
+  iteration-count problem but doesn't remove it.
+
 ## Repository layout
 
 ```

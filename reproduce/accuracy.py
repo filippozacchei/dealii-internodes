@@ -134,8 +134,18 @@ def cases(key, max_level):
                 )
             )
     elif key == "hybrid":
+        # tetmaster splits the finer (master, level k) mesh into tetrahedra,
+        # multiplying its cell count several times over; at k=6 this OOM'd
+        # even at 192 ranks (see reproduce/README.md), so tetmaster stops at
+        # k=5 -- hexmaster (which tet-splits the coarser slave instead) has
+        # no such issue and still goes to k=6.
         for k in nonconforming_levels(max_level):
-            for tag, (mc, sc) in (("hexmaster", ("hex", "tet")), ("tetmaster", ("tet", "hex"))):
+            for tag, (mc, sc), tag_max_level in (
+                ("hexmaster", ("hex", "tet"), max_level),
+                ("tetmaster", ("tet", "hex"), min(5, max_level)),
+            ):
+                if k > tag_max_level:
+                    continue
                 for p, rf in ((1, 1), (2, 5)):
                     out.append(
                         (
