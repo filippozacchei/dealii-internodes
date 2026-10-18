@@ -167,11 +167,13 @@ namespace internodes
 
   void
   InterfaceDoFHandler::setup_destination_points(
-    const std::vector<Point<dim>> &points)
+    const std::vector<Point<dim>> &points,
+    const IndexSet                &destination_owned)
   {
     TimerOutput::Scope timer_section(timer_output(), "Setup destination points");
 
     destination_points_map.clear();
+    destination_owned_ = destination_owned;
 
     const auto         ptr_mapping = this->mapping();
     const unsigned int dofs_per_cell =
@@ -220,7 +222,18 @@ namespace internodes
           }
       }
 
+    // A destination point is found by the rank(s) owning a cell that
+    // contains it, not necessarily by the rank that owns its entry of the
+    // destination vector, so this still has to gather the full map (unlike
+    // the RBF override, which needs no cell search and can skip the gather
+    // entirely -- see interface_dof_handler_rbf.cpp). Only the result is
+    // trimmed to the owned entries, to not hold the rest in memory.
     destination_points_map = compute_map_union(destination_points_map, mpi_comm);
+    for (auto it = destination_points_map.begin(); it != destination_points_map.end();)
+      if (destination_owned_.is_element(it->first))
+        ++it;
+      else
+        it = destination_points_map.erase(it);
   }
 
   void

@@ -2,7 +2,7 @@
 #define INTERNODES_INTERFACE_DOF_HANDLER_RBF_HPP
 
 #include <deal.II/lac/solver_gmres.h>
-#include <deal.II/lac/trilinos_precondition.h>
+#include <deal.II/lac/trilinos_solver.h>
 
 #include "internodes/interface_dof_handler.hpp"
 #include "internodes/rtree_handler.hpp"
@@ -60,8 +60,15 @@ namespace internodes
                 const TrilinosWrappers::MPI::Vector &src,
                 const std::vector<Point<dim>>       &points) const override;
 
+    /// Computes the RBF weights (sparse, in `destination_points_map`) of the
+    /// destination points owned by this rank. Unlike the Lagrange base
+    /// class, this needs no geometric search: the weights of a destination
+    /// point depend only on the (globally replicated) source support
+    /// points, so every rank can compute the weights of the points it owns
+    /// on its own, without a global gather of the full map.
     void
-    setup_destination_points(const std::vector<Point<dim>> &points) override;
+    setup_destination_points(const std::vector<Point<dim>> &points,
+                             const IndexSet                &destination_owned) override;
 
   private:
     void
@@ -75,14 +82,20 @@ namespace internodes
     SparsityPattern                 sp;
     TrilinosWrappers::SparseMatrix  Phi;
     TrilinosWrappers::MPI::Vector   scaling_factors;
-    TrilinosWrappers::PreconditionAMG preconditioner_Phi;
 
-    /// destination point index -> RBF weights, indexed directly by *global*
-    /// interface-local DoF index (dense, unlike the sparse
-    /// index/value-pair representation used by the base class for the
-    /// Lagrange case -- since an RBF stencil is a full row of `Phi`, not
-    /// just the few nonzero shape functions of one cell).
-    std::map<types::global_dof_index, Vector<double>> destination_points_map_RBF;
+    /// Direct factorization of `Phi`, computed once in the constructor and
+    /// reused (no refactorization) by every interpolate() call. `Phi` is an
+    /// RBF Gram matrix, not a discretized elliptic operator, so AMG is a
+    /// poor preconditioner for it: at large support radii (e.g. the paper's
+    /// r_f=10 regime) CG+AMG needs thousands of iterations per call and
+    /// that cost barely improves with more MPI ranks (it's iteration-
+    /// latency-bound, not work-bound). `Phi` itself stays modest in size
+    /// even at large radius (it is assembled from a 2D interface mesh), so
+    /// a one-time sparse direct factorization (gathered internally by
+    /// Amesos) is cheap and turns every subsequent solve into a back/
+    /// forward substitution. Verified to reproduce CG+AMG's solution to
+    /// round-off.
+    mutable TrilinosWrappers::SolverDirect solver_Phi;
 
     mutable TrilinosWrappers::MPI::Vector temp;
     mutable Vector<double>                temp_data;

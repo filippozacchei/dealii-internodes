@@ -1,7 +1,6 @@
 #include "internodes/interface_dof_handler_rbf.hpp"
 
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
-#include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/sparsity_tools.h>
 
 #include <cmath>
@@ -26,7 +25,7 @@ namespace internodes
     , rtree(std::make_shared<RTreeHandler>(support_points_global_, radius_))
   {
     TimerOutput::Scope timer_section(timer_output(),
-                                     "setup: RBF operators (Phi, AMG, scaling)");
+                                     "setup: RBF operators (Phi, direct factor, scaling)");
     rhs.reinit(this->interface_dofs_owned().size());
     temp_data.reinit(this->interface_dofs_owned().size());
     temp.reinit(this->interface_dofs_owned());
@@ -69,25 +68,18 @@ namespace internodes
       }
     Phi.compress(VectorOperation::insert);
 
-    pcout() << "Factoring Phi and computing RL-RBF scaling factors..."
+    pcout() << "Factoring Phi (direct solve) and computing RL-RBF scaling "
+               "factors..."
              << std::endl;
-    TrilinosWrappers::PreconditionAMG::AdditionalData amg_data;
-    amg_data.higher_order_elements = true;
-    amg_data.smoother_sweeps       = 1;
-    amg_data.smoother_type         = "Chebyshev";
-    amg_data.coarse_type           = "Amesos-KLU";
-    amg_data.aggregation_threshold = 1e-2;
-    preconditioner_Phi.initialize(Phi, amg_data);
+    solver_Phi.initialize(Phi);
 
     // Rescaling: solve Phi * scaling_factors = 1 (the paper's g(x) = 1 in
     // the rescaled interpolant, Eq. before \eqref{eq:interp}).
-    ReductionControl               control(100000, 1e-12, 1e-10);
-    SolverCG<TrilinosWrappers::MPI::Vector> solver(control);
     TrilinosWrappers::MPI::Vector  ones(this->interface_dofs_owned());
     ones.add(1.);
 
     scaling_factors.reinit(this->interface_dofs_owned());
-    solver.solve(Phi, scaling_factors, ones, preconditioner_Phi);
+    solver_Phi.solve(scaling_factors, ones);
 
     scaling_factor_vectors = scaling_factors;
   }
@@ -123,75 +115,83 @@ namespace internodes
 
   void
   InterfaceDoFHandlerRBF::setup_destination_points(
-    const std::vector<Point<dim>> &points)
+    const std::vector<Point<dim>> &points,
+    const IndexSet                &destination_owned)
   {
     TimerOutput::Scope timer_section(timer_output(), "Setup destination points");
 
-    // Neighbor queries against the (globally gathered) rtree don't depend
-    // on which rank owns which geometry, so the destination point list is
-    // simply load-balanced by splitting it into contiguous chunks across
-    // ranks -- unlike the Lagrange case, there's no need to iterate locally
-    // owned cells.
-    const unsigned int my_rank = Utilities::MPI::this_mpi_process(mpi_comm);
-    const unsigned int n_ranks = Utilities::MPI::n_mpi_processes(mpi_comm);
-    const unsigned int n_local = points.size() / n_ranks;
-    const unsigned int start   = my_rank * n_local;
-    const unsigned int end =
-      (my_rank == n_ranks - 1) ? points.size() : start + n_local;
+    destination_points_map.clear();
+    destination_owned_ = destination_owned;
 
-    for (std::size_t i = start; i < end; ++i)
+    // Unlike the Lagrange base class, a destination point's RBF weights
+    // don't depend on which rank's cell contains it -- only on the
+    // (globally replicated) source support points and the R-tree over
+    // them, which every rank already holds. So each rank computes the
+    // weights of exactly the destination points it owns and keeps them,
+    // with no communication at all (it used to compute a load-balanced
+    // slice of *all* points and then all_gather the result onto every
+    // rank -- hundreds of MB per rank at large support radii, and a cost
+    // that doesn't shrink with more ranks since the full map has to land
+    // everywhere regardless of how many there are).
+    for (const types::global_dof_index i : destination_owned_)
       {
         const Point<dim> point   = points[i];
         const auto       results = rtree->query(point);
-        DoFs_values(point, rhs, results);
 
         for (const auto &entry : results)
-          if (rhs(entry.second) > 1e-15)
-            {
-              destination_points_map[i].first.push_back(entry.second);
-              destination_points_map[i].second.push_back(rhs(entry.second));
-            }
+          {
+            Point<dim> node_distance = point;
+            node_distance -= this->support_points_global()[entry.second];
+            const double weight = evaluate_rbf(node_distance);
+            if (weight > 1e-15)
+              {
+                destination_points_map[i].first.push_back(entry.second);
+                destination_points_map[i].second.push_back(weight);
+              }
+          }
       }
-
-    destination_points_map = compute_map_union(destination_points_map, mpi_comm);
   }
 
   void
   InterfaceDoFHandlerRBF::interpolate(TrilinosWrappers::MPI::Vector       &dst,
                                        const TrilinosWrappers::MPI::Vector &src,
-                                       const std::vector<Point<dim>>       &points) const
+                                       const std::vector<Point<dim>> & /*points*/) const
   {
+    AssertThrow(dst.locally_owned_elements() == destination_owned_,
+                ExcMessage("The destination vector must own exactly the entries "
+                           "passed as destination_owned to "
+                           "setup_destination_points()."));
+
     // Step 1: temp = Phi^{-1} * src (the source-side RBF coefficients gamma
-    // in the paper's notation).
+    // in the paper's notation). Reuses the factorization computed once in
+    // the constructor -- solve() does not refactor.
     {
       TimerOutput::Scope timer_section(timer_output(), "  interpolate: solve Phi");
-      ReductionControl   control(100000, 1e-12, 1e-10);
-      SolverCG<TrilinosWrappers::MPI::Vector> solver(control);
-      solver.solve(Phi, temp, src, preconditioner_Phi);
+      solver_Phi.solve(temp, src);
       temp_data = temp;
     }
     TimerOutput::Scope timer_section(timer_output(), "  interpolate: evaluate at points");
 
-    // Step 2: evaluate the rescaled interpolant at each destination point.
-    // (Loop bound is points.size(), matching setup_destination_points();
-    // in practice this equals dst's global size, since `points` is always
-    // the full set of destination-interface support points.)
-    for (std::size_t i = 0; i < points.size(); ++i)
+    // Step 2: evaluate the rescaled interpolant at each destination point
+    // owned here: value = (weights . gamma) / (weights . scaling_factors),
+    // using the sparse weights computed in setup_destination_points()
+    // directly (no dense O(n_interface) pass per point).
+    for (const types::global_dof_index i : destination_owned_)
       {
-        if (!dst.locally_owned_elements().is_element(i))
-          continue;
-
-        rhs = 0.0;
-        const auto point_data = destination_points_map.find(i);
+        double     value        = 0.;
+        double     scale_factor = 0.;
+        const auto point_data   = destination_points_map.find(i);
         if (point_data != destination_points_map.end())
           {
-            const auto &data = point_data->second;
-            rhs.add(data.first, data.second);
+            const auto &indices = point_data->second.first;
+            const auto &weights = point_data->second.second;
+            for (std::size_t k = 0; k < indices.size(); ++k)
+              {
+                value += weights[k] * temp_data[indices[k]];
+                scale_factor += weights[k] * scaling_factor_vectors[indices[k]];
+              }
           }
-
-        const double scale_factor = scaling_factor_vectors * rhs;
-        const double value        = temp_data * rhs;
-        dst(i)                    = value / scale_factor;
+        dst(i) = value / scale_factor;
       }
     dst.compress(VectorOperation::insert);
   }

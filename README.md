@@ -219,62 +219,97 @@ use.
 
 Three distinct bottlenecks found while auditing the code against the paper's
 scalability results (none of these are correctness issues — see "Notes on
-the port" above for the from-scratch code audit).
+the port" above for the from-scratch code audit). The first two, below, are
+now **fixed** (2026-10-18); the third (Lagrange) is still open. Numbers are
+from the pre-fix code and are kept as the record of what motivated each
+change — ranked by measured impact, not by where they sit in the code.
 
-- **`compute_map_union()` broadcasts the destination-point map to every
+**By far the dominant one, confirmed with real timings** (`test5_np48.json`
+/ `test5_np768.json`, shell geometry, $\mathbb P_2$, RBF radius factor 10 —
+the worst-conditioning case in the scalability suite):
+
+- **Φ's CG iteration count cost one global `allreduce` per iteration, and
+  dominated every phase that calls `interpolate()`, not just the GMRES
+  loop.** `interpolate: solve Phi` alone was 1389s of the 1440s total
+  `driver: solve()` wall-clock at 48 ranks (**96%**), and 512s of 524s at 768
+  ranks (**98%** — only a 2.7× speedup for 16× the ranks, ≈17% efficiency).
+  This one call accounted for essentially the entire scalability picture of
+  this config. Three different phases paid for it, because they all end up
+  calling `interpolate()` against the same Φ:
+  - `setup: RBF operators (Phi, AMG, scaling)` (the "Assembly Interpolation
+    Operators" series in the plots) includes the one-time CG+AMG solve of
+    Φ·scaling=1 at construction — 192s of its 192s/55s totals (np=48/768) is
+    plausibly almost entirely this, by elimination (matrix assembly and AMG
+    setup are comparatively cheap).
+  - `Step 2: interface residual chi` is, in its entirety, one more
+    `interpolate()` call (the Q12 residual transfer) — 33s/8.6s (np=48/768),
+    same mechanism, same matrix.
+  - `Step 3 (GMRES): Q21/Q12 interpolation`, inside the main loop, one or two
+    calls per outer iteration.
+
+  **Fixed, without changing the RL-RBF method or its formulas**: Φ is fixed
+  for the lifetime of a solve, and only the right-hand side changes between
+  `interpolate()` calls — so the ~dozens of CG+AMG solves against the *same*
+  Φ across setup, Step 2 and Step 3 in a single run were exactly the
+  situation a one-time **direct factorization** is suited to. Φ is symmetric
+  positive definite, and is now factored once with
+  `TrilinosWrappers::SolverDirect` (Amesos-KLU, already linked via Trilinos
+  — previously used only as the AMG coarse solver), reused (no refactor)
+  by every subsequent solve in all three phases: a cheap back-substitution,
+  no outer iterations, no per-iteration `allreduce`. This also sidesteps the
+  actual problem CG+AMG had here — a direct factorization doesn't degrade
+  the way iterative methods do when the matrix is near-dense/ill-conditioned
+  — and Φ is interface-sized (one dimension lower than the volume problem),
+  so the one-time fill-in/memory cost is bounded by the interface size, not
+  the full 3-D problem. Verified against the pre-fix code on 1/2/4-rank
+  laptop smoke cases (RBF at $r_f=1$ and $r_f=10$, and Lagrange): identical
+  GMRES iteration counts and H1 errors. **Not yet re-run at Table-1 scale on
+  the cluster** — the numbers above are not yet confirmed to actually
+  improve at that scale, only expected to from the mechanism.
+
+**Secondary — real, but a few percent of wall-clock in the same measurement**
+(`Setup destination points`: 35s/7s of 1440s/524s, np=48/768 — already
+~4.9× faster at 16× the ranks, i.e. scaling reasonably, just not ideally):
+
+- **`compute_map_union()` broadcast the destination-point map to every
   rank, not just the ranks that need it.** `setup_destination_points()`, in
   both `interface_dof_handler.cpp` and `interface_dof_handler_rbf.cpp`,
-  calls `compute_map_union()` (`utilities.hpp`), which does an `all_gather`
+  called `compute_map_union()` (`utilities.hpp`), which does an `all_gather`
   and merges every rank's local contribution onto every rank — by design
   ("fully-populated map on every process", per its own doc comment).
   `interpolate()` afterward only ever looks up locally-owned indices
-  (`dst.locally_owned_elements().is_element(i)`), so every rank pays to
+  (`dst.locally_owned_elements().is_element(i)`), so every rank paid to
   receive, store and merge entries it never reads. The communication volume
   and the serial merge loop both scale with the *total* problem size, not
-  the local partition — a weak-scaling liability that gets worse specifically
-  as rank count grows, and the likely reason the high-rank-count (192)
-  scalability runs were the hardest to get to finish cleanly. Cheap fix:
-  filter the merged result down to the caller's locally-owned index set
-  before returning (kills the memory/merge cost, not the `all_gather`
-  itself). Real fix: replace the all-to-all gather with a point-to-point
-  exchange so each rank only ever receives what it owns.
-- **The Lagrange `setup_destination_points()` has no spatial acceleration.**
-  It loops over every locally-owned interface cell and tests every *global*
-  destination point against it (`cell->point_inside(points[i])`,
-  `interface_dof_handler.cpp:183-221`) — brute-force, O(local cells × global
-  points). The RBF path already builds an `RTreeHandler` for the equivalent
-  query; the Lagrange path doesn't. Same weak-scaling shape as above (per-rank
-  cost grows with total problem size), just in the search step instead of the
-  communication step. Affects every conforming/p1p1/p2p3 test, since those use
-  the Lagrange interface handler. Fix: reuse `RTreeHandler` here too.
-- **Φ's CG iteration count costs one global `allreduce` per iteration.** At
-  the radius/degree combinations needed for accuracy, Φ needs thousands of CG
-  iterations per solve (233,620 total across 16 solves at k=6, RBF radius
-  factor 10). Each iteration needs a global reduction for the CG dot
-  products — a fixed latency cost independent of rank count — so as ranks
-  increase on a fixed problem (strong scaling) this specifically erodes
-  parallel efficiency, separately from the extra wall-clock.
-  **This can be addressed without changing the RL-RBF method or its
-  formulas**: Φ is fixed for the lifetime of a GMRES solve, and only the
-  right-hand side changes between `interpolate()` calls (one per outer GMRES
-  iteration) — so the ~hundred CG+AMG solves against the *same* Φ in a single
-  run are exactly the situation a one-time **direct factorization** is suited
-  to. Φ is symmetric positive definite; Amesos/KLU or MUMPS are already
-  linked via Trilinos (currently used only as the AMG coarse solver). Factor
-  once, and every subsequent solve becomes a cheap back-substitution with no
-  outer iterations and no per-iteration allreduce at all. This also sidesteps
-  the actual problem CG+AMG has here — a direct factorization doesn't degrade
-  the way iterative methods do when the matrix is near-dense/ill-conditioned —
-  and Φ is interface-sized (one dimension lower than the volume problem), so
-  the extra fill-in/memory is bounded by the interface size, not the full 3-D
-  problem. Caveats: parallel sparse direct solvers have their own scaling
-  limits at very high rank counts, and storing the factors of a near-dense Φ
-  costs close to a dense matrix's memory — worth measuring on the actual Φ
-  sizes in the scalability configs before committing to it. A smaller,
-  already-measured incremental option on the existing CG+AMG approach:
-  tuning `aggregation_threshold` (0.3 vs. the default 1e-2) gives ~13%
-  improvement, same-machine/same-rank-count comparison — it softens the
-  iteration-count problem but doesn't remove it.
+  the local partition — a weak-scaling liability that gets worse as rank
+  count grows, though the measurement above shows it wasn't yet the
+  dominant cost at the rank counts tested.
+
+  **Fixed, for the RBF path**: unlike the Lagrange case (next item), an RBF
+  destination point's weights depend only on the (already globally
+  replicated) source support points and the R-tree over them, not on which
+  rank's cell contains it — so no gather is needed at all.
+  `setup_destination_points()`/`interpolate()` now take the destination
+  `IndexSet` directly, and each rank computes and evaluates only the
+  entries it owns, with no communication. `interpolate()` also evaluates
+  the sparse weights directly (a dot product) instead of scattering them
+  into a dense O(interface-size) vector first. Verified the same way as the
+  Φ fix above (identical results on laptop smoke cases); not yet re-run at
+  Table-1 scale. The Lagrange path is unchanged: it still needs to gather
+  (see below), and now only discards the non-owned part of the result
+  afterward, to not hold it in memory.
+- **The Lagrange `setup_destination_points()` has no spatial acceleration —
+  still open.** It loops over every locally-owned interface cell and tests
+  every *global* destination point against it
+  (`cell->point_inside(points[i])`, `interface_dof_handler.cpp:183-221`) —
+  brute-force, O(local cells × global points). The RBF path already builds
+  an `RTreeHandler` for the equivalent query; the Lagrange path doesn't.
+  Same weak-scaling shape as above (per-rank cost grows with total problem
+  size), just in the search step instead of the communication step. Affects
+  every conforming/p1p1/p2p3 test, since those use the Lagrange interface
+  handler — not fixed here since Test 1 (the only scalability test using
+  it) already scales close to ideally; worth revisiting if a future
+  Lagrange test doesn't. Fix: reuse `RTreeHandler` here too.
 
 ## Repository layout
 
@@ -293,9 +328,12 @@ docs/                 Architecture figure (source + rendered)
 The hexahedral and tetrahedral code paths, serial and parallel, are validated
 as described above, on both a local machine (deal.II 9.7.0/9.8.0, OpenMPI)
 and an HPC cluster (CINECA Galileo100, deal.II 9.8.0, Intel MPI). The
-HPC-scale configurations in `reproduce/` have not yet been run at full size
-in this port. Only the diffusion–reaction model is provided; other PDEs need
-a new `SubProblemBase` subclass.
+HPC-scale configurations in `reproduce/` have been run at full size on
+Galileo100 (Table 1's Tests 1–5, all 8 core counts, both the accuracy and
+scalability studies; see `reproduce/results/*_galileo100/`), except for the
+scalability fixes in "Improving scalability" above, which have not yet been
+re-run at that scale. Only the diffusion–reaction model is provided; other
+PDEs need a new `SubProblemBase` subclass.
 
 ## License
 

@@ -63,8 +63,22 @@ namespace internodes
     /// subdomain's interface), the owning cell and the interface DoFs/shape
     /// function values needed to evaluate a finite element function there.
     /// Must be called before interpolate().
+    ///
+    /// @param points             all destination points, indexed like the
+    ///                           destination vector (the same on every rank).
+    /// @param destination_owned  indices, among @p points, that the
+    ///                           destination vector passed to interpolate()
+    ///                           will own. The Lagrange case still computes
+    ///                           and gathers the full map (which cell/rank
+    ///                           finds a point doesn't depend on who owns
+    ///                           its destination-vector entry), only
+    ///                           discarding the rest of it afterwards; the
+    ///                           RBF override (see
+    ///                           interface_dof_handler_rbf.hpp) uses it to
+    ///                           skip that gather entirely.
     virtual void
-    setup_destination_points(const std::vector<Point<dim>> &points);
+    setup_destination_points(const std::vector<Point<dim>> &points,
+                             const IndexSet                &destination_owned);
 
     /// Interpolates the finite element function with interface-DoF
     /// coefficients @p src onto the destination points passed to the last
@@ -235,6 +249,10 @@ namespace internodes
     std::map<types::global_dof_index,
              std::pair<std::vector<types::global_dof_index>, std::vector<double>>>
       destination_points_map;
+
+    /// Destination vector entries owned by this rank, as passed to the last
+    /// setup_destination_points().
+    IndexSet destination_owned_;
 
   private:
     void

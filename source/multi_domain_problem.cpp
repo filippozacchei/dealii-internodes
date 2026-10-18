@@ -17,9 +17,11 @@ namespace internodes
       master->interface_dofHandler_ptr->interface_dofs_owned().n_elements();
 
     slave->interface_dofHandler_ptr->setup_destination_points(
-      master->interface_dofHandler_ptr->support_points_global());
+      master->interface_dofHandler_ptr->support_points_global(),
+      master->interface_dofHandler_ptr->interface_dofs_owned());
     master->interface_dofHandler_ptr->setup_destination_points(
-      slave->interface_dofHandler_ptr->support_points_global());
+      slave->interface_dofHandler_ptr->support_points_global(),
+      slave->interface_dofHandler_ptr->interface_dofs_owned());
   }
 
   void

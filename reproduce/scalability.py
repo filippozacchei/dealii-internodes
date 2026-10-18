@@ -64,7 +64,14 @@ TESTS = {
 PHASES = [
     (
         "Assembly Interpolation Operators",
-        ("Setup destination points", "setup: RBF operators (Phi, AMG, scaling)"),
+        (
+            "Setup destination points",
+            # Old key, from before Phi switched from CG+AMG to a one-time
+            # direct factorization (kept so cached pre-fix results still
+            # plot correctly).
+            "setup: RBF operators (Phi, AMG, scaling)",
+            "setup: RBF operators (Phi, direct factor, scaling)",
+        ),
     ),
     ("Assembly Internal Operators", ("Step 0: assembly (master/slave)",)),
     ("Step 1", ("Step 1: u^(f) on master/slave",)),
