@@ -107,18 +107,31 @@ def cases(key, max_level):
                     )
                 )
     elif key == "gmres":
+        # p1=2, p2=3: the paper's "same progressive mesh configuration and
+        # polynomial degrees as in the previous test case" means the P2/P3
+        # study's own (mixed) degrees, confirmed by "gmres_check" below --
+        # an earlier version of this case read it as p1=p2=2, which does
+        # not reproduce the paper's reported iteration counts (32->86
+        # unpreconditioned, ~7 preconditioned); p1=2/p2=3 does.
         for k in nonconforming_levels(max_level):
-            out.append((f"gmres_pc_k{k}", box_case(k, k - 1, master_degree=2)))
-            out.append((f"gmres_nopc_k{k}", box_case(k, k - 1, master_degree=2, preconditioner=False)))
+            out.append((f"gmres_pc_k{k}", box_case(k, k - 1, master_degree=2, slave_degree=3)))
+            out.append(
+                (
+                    f"gmres_nopc_k{k}",
+                    box_case(k, k - 1, master_degree=2, slave_degree=3, preconditioner=False),
+                )
+            )
     elif key == "gmres_check":
-        # Consistency check against the "gmres" cases above, which read the
+        # The investigation that found the above: "gmres" used to read the
         # paper's "same progressive mesh configuration as in the previous
-        # test case [and] polynomial degree p=2" as p=2/p=2 (see README.md).
-        # This instead takes "the previous test case" literally: p1=2, p2=3,
-        # the P2/P3 study's own degrees, with and without the preconditioner
-        # -- if the gmres iteration counts disagree with the paper's
-        # regardless of which reading is used, that argues against the
-        # discrepancy being a wrong-configuration mistake.
+        # test case [and] polynomial degree p=2" as p=2/p=2 (see README.md
+        # history), which did not reproduce the paper's reported counts.
+        # This took "the previous test case" literally: p1=2, p2=3, the
+        # P2/P3 study's own degrees -- confirmed matching the paper, and
+        # folded into "gmres" above; kept as a separate, named case so the
+        # cached results of that investigation (and this comment) stay
+        # around as a record, rather than silently disappearing into an
+        # edit to "gmres" with no trace of why.
         #
         # Lagrange only, not RBF: an RBF stencil sized for the p2=3 slave
         # needs r_f=10 (r_f=1 undersizes it, see the P2/P3 assumptions

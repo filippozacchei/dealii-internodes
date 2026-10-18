@@ -1,5 +1,5 @@
 === dealii-internodes: coupled_diffusion example ===
-Parameter file: /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy_galileo100/gmres_nopc_k3.prm
+Parameter file: /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy_galileo100/gmres_check_p23_lag_nopc_k3.prm
 Building master subproblem...
 Building slave subproblem...
 Coupling master and slave...
@@ -9,33 +9,33 @@ Step 1: solving for u^(f)
 Step 2: computing interface residual chi
 Step 3: solving S*lambda = chi
 Step 4: solving for u^(lambda)
-GMRES converged in 37 iterations.
-Broken H1 error vs. exact solution: 0.301209
+GMRES converged in 44 iterations.
+Broken H1 error vs. exact solution: 0.0162687
 
 
 +-----------------------------------------------------------+------------+------------+
-| Total wallclock time elapsed since start                  |      1.92s |            |
+| Total wallclock time elapsed since start                  |      1.35s |            |
 |                                                           |            |            |
 | Section                                       | no. calls |  wall time | % of total |
 +-----------------------------------------------+-----------+------------+------------+
-| interpolateResidual: solve M_gamma            |        38 |    0.0218s |       1.1% |
-| normal derivative                             |        76 |    0.0034s |      0.18% |
-| Setup destination points                      |         2 |   0.00192s |       0.1% |
-| Step 0: assembly (master/slave)               |         1 |   0.00963s |       0.5% |
-| Step 0: assembly (preconditioners)            |         1 |      1.36s |        71% |
-| Step 0: homogeneous-phase data update         |         2 |  0.000638s |         0% |
-| Step 1: u^(f) on master/slave                 |         1 |    0.0144s |      0.75% |
-| Step 2: interface residual chi                |         1 |   0.00255s |      0.13% |
-| Step 3 (GMRES): Q21 interpolation             |        37 |     0.015s |      0.78% |
-| Step 3 (GMRES): residual computation          |        37 |    0.0393s |         2% |
-| Step 3 (GMRES): subdomain solves              |        37 |     0.277s |        14% |
-| Step 3: interface solve (total)               |         1 |     0.353s |        18% |
-| Step 3b: solve S lambda = chi                 |         1 |     0.353s |        18% |
-| Step 4: u^(lambda) on master/slave            |         1 |    0.0073s |      0.38% |
-| driver: solve()                               |         1 |      1.76s |        92% |
-| setup: interface-DoFs-last renumbering        |         2 |   0.00593s |      0.31% |
-| setup: subproblem (DoFs, interface, matrices) |         2 |     0.109s |       5.7% |
-| step_rhs: f_k - A_{k,Gamma_k} lambda_k        |        78 |   0.00301s |      0.16% |
-| subdomain linear solve                        |        78 |     0.282s |        15% |
+| interpolateResidual: solve M_gamma            |        45 |    0.0267s |         2% |
+| normal derivative                             |        90 |   0.00353s |      0.26% |
+| Setup destination points                      |         2 |   0.00186s |      0.14% |
+| Step 0: assembly (master/slave)               |         1 |    0.0252s |       1.9% |
+| Step 0: assembly (preconditioners)            |         1 |     0.276s |        20% |
+| Step 0: homogeneous-phase data update         |         2 |  0.000418s |         0% |
+| Step 1: u^(f) on master/slave                 |         1 |    0.0256s |       1.9% |
+| Step 2: interface residual chi                |         1 |   0.00198s |      0.15% |
+| Step 3 (GMRES): Q21 interpolation             |        44 |    0.0173s |       1.3% |
+| Step 3 (GMRES): residual computation          |        44 |    0.0492s |       3.6% |
+| Step 3 (GMRES): subdomain solves              |        44 |     0.802s |        59% |
+| Step 3: interface solve (total)               |         1 |     0.895s |        66% |
+| Step 3b: solve S lambda = chi                 |         1 |     0.894s |        66% |
+| Step 4: u^(lambda) on master/slave            |         1 |    0.0182s |       1.4% |
+| driver: solve()                               |         1 |      1.25s |        92% |
+| setup: interface-DoFs-last renumbering        |         2 |   0.00617s |      0.46% |
+| setup: subproblem (DoFs, interface, matrices) |         2 |     0.092s |       6.8% |
+| step_rhs: f_k - A_{k,Gamma_k} lambda_k        |        92 |   0.00357s |      0.26% |
+| subdomain linear solve                        |        92 |     0.826s |        61% |
 +-----------------------------------------------+-----------+------------+------------+
 

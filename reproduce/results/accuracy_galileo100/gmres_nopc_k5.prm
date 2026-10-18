@@ -10,7 +10,7 @@ end
 
 subsection Discretization
   set Master degree = 2
-  set Slave degree = 2
+  set Slave degree = 3
   set RBF radius = 0.0
   set RBF radius factor = 0.0
 end
