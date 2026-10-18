@@ -1,6 +1,7 @@
 #include "internodes/interface_dof_handler_rbf.hpp"
 
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
+#include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/sparsity_tools.h>
 
 #include <cmath>
@@ -25,7 +26,7 @@ namespace internodes
     , rtree(std::make_shared<RTreeHandler>(support_points_global_, radius_))
   {
     TimerOutput::Scope timer_section(timer_output(),
-                                     "setup: RBF operators (Phi, ILUT, scaling)");
+                                     "setup: RBF operators (Phi, AMG, scaling)");
     rhs.reinit(this->interface_dofs_owned().size());
     temp_data.reinit(this->interface_dofs_owned().size());
     temp.reinit(this->interface_dofs_owned());
@@ -68,24 +69,21 @@ namespace internodes
       }
     Phi.compress(VectorOperation::insert);
 
-    pcout() << "Building ILU-T preconditioner for Phi and computing RL-RBF "
-               "scaling factors..."
+    pcout() << "Factoring Phi and computing RL-RBF scaling factors..."
              << std::endl;
-    // Default AdditionalData (ilut_drop=0, ilut_fill=0): no fill-in beyond
-    // Phi's own sparsity pattern, so this cannot reproduce the fill-in
-    // blow-up an exact factorization hit at large radius -- cost is bounded
-    // by Phi's own (already-assembled) sparsity, nothing more.
-    preconditioner_Phi.initialize(Phi);
+    TrilinosWrappers::PreconditionAMG::AdditionalData amg_data;
+    amg_data.higher_order_elements = true;
+    amg_data.smoother_sweeps       = 1;
+    amg_data.smoother_type         = "Chebyshev";
+    amg_data.coarse_type           = "Amesos-KLU";
+    amg_data.aggregation_threshold = 1e-2;
+    preconditioner_Phi.initialize(Phi, amg_data);
 
     // Rescaling: solve Phi * scaling_factors = 1 (the paper's g(x) = 1 in
-    // the rescaled interpolant, Eq. before \eqref{eq:interp}). GMRES, not
-    // CG: ILU-T is not symmetric even though Phi is, and CG's convergence
-    // theory (and in practice, convergence at all) requires an SPD
-    // preconditioner -- confirmed failing to converge with CG on the
-    // cluster (Test 3's shape, r_f=1). GMRES has no such requirement.
-    ReductionControl                  control(100000, 1e-12, 1e-10);
-    SolverGMRES<TrilinosWrappers::MPI::Vector> solver(control);
-    TrilinosWrappers::MPI::Vector     ones(this->interface_dofs_owned());
+    // the rescaled interpolant, Eq. before \eqref{eq:interp}).
+    ReductionControl               control(100000, 1e-12, 1e-10);
+    SolverCG<TrilinosWrappers::MPI::Vector> solver(control);
+    TrilinosWrappers::MPI::Vector  ones(this->interface_dofs_owned());
     ones.add(1.);
 
     scaling_factors.reinit(this->interface_dofs_owned());
@@ -173,12 +171,11 @@ namespace internodes
                            "setup_destination_points()."));
 
     // Step 1: temp = Phi^{-1} * src (the source-side RBF coefficients gamma
-    // in the paper's notation), GMRES preconditioned by the ILU-T built
-    // once in the constructor (GMRES, not CG -- see the constructor).
+    // in the paper's notation).
     {
       TimerOutput::Scope timer_section(timer_output(), "  interpolate: solve Phi");
       ReductionControl   control(100000, 1e-12, 1e-10);
-      SolverGMRES<TrilinosWrappers::MPI::Vector> solver(control);
+      SolverCG<TrilinosWrappers::MPI::Vector> solver(control);
       solver.solve(Phi, temp, src, preconditioner_Phi);
       temp_data = temp;
     }

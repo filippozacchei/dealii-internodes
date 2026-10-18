@@ -83,25 +83,27 @@ namespace internodes
     TrilinosWrappers::SparseMatrix  Phi;
     TrilinosWrappers::MPI::Vector   scaling_factors;
 
-    /// CG preconditioner for `Phi`. `Phi` is an RBF Gram matrix, not a
-    /// discretized elliptic operator, so AMG (the original choice) is a
-    /// poor match for it: at large support radii (e.g. the paper's r_f=10
-    /// regime) CG+AMG needs thousands of iterations per call, barely
-    /// improving with more MPI ranks (iteration-latency-bound, not
-    /// work-bound). An *exact* direct factorization (tried first, see git
-    /// history) is not the answer either: at large radius Phi's bandwidth
-    /// grows with the support (~pi*r_f^2 neighbors per row on a 2D
-    /// interface), and an exact sparse factorization's fill-in grows with
-    /// it too -- confirmed on the cluster to blow up to the point of not
-    /// finishing a single factorization in 10+ minutes at r_f=10 (and
-    /// Amesos' factorization is serial besides, gathered onto one rank
-    /// while every other rank waits). ILU-T is the middle ground: a
-    /// genuinely parallel, per-rank incomplete factorization (block/
-    /// additive-Schwarz, Ifpack) with *bounded* fill-in by construction
-    /// (the default below adds none beyond Phi's own sparsity pattern), so
-    /// it cannot reproduce that blow-up, while still being a far better
-    /// match for a Gram matrix's structure than AMG.
-    TrilinosWrappers::PreconditionILUT preconditioner_Phi;
+    /// CG preconditioner for `Phi`. Back to AMG -- the original choice --
+    /// after two cluster-only failures of sparse alternatives tried at
+    /// Test 5's r_f=10 (see git history for both): an *exact* factorization
+    /// (Amesos) blew up in fill-in and didn't finish in 10+ minutes; an
+    /// incomplete one (Ifpack ILU-T) crashed outright
+    /// ("Ifpack_LocalFilter.cpp" / "Ifpack_ILUT.cpp", error -1). Root cause
+    /// for both, found only after the second failure: at r_f=10, the
+    /// *slave* handler's support radius (1.1855, logged as "RBF radii:
+    /// ... slave ...") is comparable to the whole interface sphere's
+    /// diameter (radius 0.75, so diameter 1.5) -- every point's support
+    /// ball covers nearly every other point, so Phi there is not sparse
+    /// with a wide bandwidth, it is close to fully *dense*. Every
+    /// technique above assumes meaningful sparsity (bounded fill-in,
+    /// block-local structure); none of that holds here, which is almost
+    /// certainly why both broke specifically on Test 5 and nowhere else.
+    /// AMG+CG is slow in this regime (thousands of iterations) but it is
+    /// the one approach actually validated at this scale, so it stays
+    /// until a fix designed for the genuinely-dense case (e.g. a real
+    /// distributed dense factorization, not a sparse one) is validated
+    /// off the critical path, not iterated live against cluster jobs.
+    TrilinosWrappers::PreconditionAMG preconditioner_Phi;
 
     mutable TrilinosWrappers::MPI::Vector temp;
     mutable Vector<double>                temp_data;
