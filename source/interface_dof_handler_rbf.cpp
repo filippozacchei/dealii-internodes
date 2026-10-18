@@ -25,7 +25,7 @@ namespace internodes
     , rtree(std::make_shared<RTreeHandler>(support_points_global_, radius_))
   {
     TimerOutput::Scope timer_section(timer_output(),
-                                     "setup: RBF operators (Phi, direct factor, scaling)");
+                                     "setup: RBF operators (Phi, ILUT, scaling)");
     rhs.reinit(this->interface_dofs_owned().size());
     temp_data.reinit(this->interface_dofs_owned().size());
     temp.reinit(this->interface_dofs_owned());
@@ -68,18 +68,28 @@ namespace internodes
       }
     Phi.compress(VectorOperation::insert);
 
-    pcout() << "Factoring Phi (direct solve) and computing RL-RBF scaling "
-               "factors..."
+    pcout() << "Building ILU-T preconditioner for Phi and computing RL-RBF "
+               "scaling factors..."
              << std::endl;
-    solver_Phi.initialize(Phi);
+    // Default AdditionalData (ilut_drop=0, ilut_fill=0): no fill-in beyond
+    // Phi's own sparsity pattern, so this cannot reproduce the fill-in
+    // blow-up an exact factorization hit at large radius -- cost is bounded
+    // by Phi's own (already-assembled) sparsity, nothing more.
+    preconditioner_Phi.initialize(Phi);
 
     // Rescaling: solve Phi * scaling_factors = 1 (the paper's g(x) = 1 in
-    // the rescaled interpolant, Eq. before \eqref{eq:interp}).
-    TrilinosWrappers::MPI::Vector  ones(this->interface_dofs_owned());
+    // the rescaled interpolant, Eq. before \eqref{eq:interp}). GMRES, not
+    // CG: ILU-T is not symmetric even though Phi is, and CG's convergence
+    // theory (and in practice, convergence at all) requires an SPD
+    // preconditioner -- confirmed failing to converge with CG on the
+    // cluster (Test 3's shape, r_f=1). GMRES has no such requirement.
+    ReductionControl                  control(100000, 1e-12, 1e-10);
+    SolverGMRES<TrilinosWrappers::MPI::Vector> solver(control);
+    TrilinosWrappers::MPI::Vector     ones(this->interface_dofs_owned());
     ones.add(1.);
 
     scaling_factors.reinit(this->interface_dofs_owned());
-    solver_Phi.solve(scaling_factors, ones);
+    solver.solve(Phi, scaling_factors, ones, preconditioner_Phi);
 
     scaling_factor_vectors = scaling_factors;
   }
@@ -163,11 +173,13 @@ namespace internodes
                            "setup_destination_points()."));
 
     // Step 1: temp = Phi^{-1} * src (the source-side RBF coefficients gamma
-    // in the paper's notation). Reuses the factorization computed once in
-    // the constructor -- solve() does not refactor.
+    // in the paper's notation), GMRES preconditioned by the ILU-T built
+    // once in the constructor (GMRES, not CG -- see the constructor).
     {
       TimerOutput::Scope timer_section(timer_output(), "  interpolate: solve Phi");
-      solver_Phi.solve(temp, src);
+      ReductionControl   control(100000, 1e-12, 1e-10);
+      SolverGMRES<TrilinosWrappers::MPI::Vector> solver(control);
+      solver.solve(Phi, temp, src, preconditioner_Phi);
       temp_data = temp;
     }
     TimerOutput::Scope timer_section(timer_output(), "  interpolate: evaluate at points");

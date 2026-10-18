@@ -66,11 +66,12 @@ PHASES = [
         "Assembly Interpolation Operators",
         (
             "Setup destination points",
-            # Old key, from before Phi switched from CG+AMG to a one-time
-            # direct factorization (kept so cached pre-fix results still
-            # plot correctly).
+            # Older keys (AMG, then a one-time direct factorization that
+            # turned out to blow up in fill-in at large radius -- see git
+            # history), kept so already-cached results still plot.
             "setup: RBF operators (Phi, AMG, scaling)",
             "setup: RBF operators (Phi, direct factor, scaling)",
+            "setup: RBF operators (Phi, ILUT, scaling)",
         ),
     ),
     ("Assembly Internal Operators", ("Step 0: assembly (master/slave)",)),

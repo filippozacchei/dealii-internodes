@@ -2,7 +2,7 @@
 #define INTERNODES_INTERFACE_DOF_HANDLER_RBF_HPP
 
 #include <deal.II/lac/solver_gmres.h>
-#include <deal.II/lac/trilinos_solver.h>
+#include <deal.II/lac/trilinos_precondition.h>
 
 #include "internodes/interface_dof_handler.hpp"
 #include "internodes/rtree_handler.hpp"
@@ -83,19 +83,25 @@ namespace internodes
     TrilinosWrappers::SparseMatrix  Phi;
     TrilinosWrappers::MPI::Vector   scaling_factors;
 
-    /// Direct factorization of `Phi`, computed once in the constructor and
-    /// reused (no refactorization) by every interpolate() call. `Phi` is an
-    /// RBF Gram matrix, not a discretized elliptic operator, so AMG is a
-    /// poor preconditioner for it: at large support radii (e.g. the paper's
-    /// r_f=10 regime) CG+AMG needs thousands of iterations per call and
-    /// that cost barely improves with more MPI ranks (it's iteration-
-    /// latency-bound, not work-bound). `Phi` itself stays modest in size
-    /// even at large radius (it is assembled from a 2D interface mesh), so
-    /// a one-time sparse direct factorization (gathered internally by
-    /// Amesos) is cheap and turns every subsequent solve into a back/
-    /// forward substitution. Verified to reproduce CG+AMG's solution to
-    /// round-off.
-    mutable TrilinosWrappers::SolverDirect solver_Phi;
+    /// CG preconditioner for `Phi`. `Phi` is an RBF Gram matrix, not a
+    /// discretized elliptic operator, so AMG (the original choice) is a
+    /// poor match for it: at large support radii (e.g. the paper's r_f=10
+    /// regime) CG+AMG needs thousands of iterations per call, barely
+    /// improving with more MPI ranks (iteration-latency-bound, not
+    /// work-bound). An *exact* direct factorization (tried first, see git
+    /// history) is not the answer either: at large radius Phi's bandwidth
+    /// grows with the support (~pi*r_f^2 neighbors per row on a 2D
+    /// interface), and an exact sparse factorization's fill-in grows with
+    /// it too -- confirmed on the cluster to blow up to the point of not
+    /// finishing a single factorization in 10+ minutes at r_f=10 (and
+    /// Amesos' factorization is serial besides, gathered onto one rank
+    /// while every other rank waits). ILU-T is the middle ground: a
+    /// genuinely parallel, per-rank incomplete factorization (block/
+    /// additive-Schwarz, Ifpack) with *bounded* fill-in by construction
+    /// (the default below adds none beyond Phi's own sparsity pattern), so
+    /// it cannot reproduce that blow-up, while still being a far better
+    /// match for a Gram matrix's structure than AMG.
+    TrilinosWrappers::PreconditionILUT preconditioner_Phi;
 
     mutable TrilinosWrappers::MPI::Vector temp;
     mutable Vector<double>                temp_data;
