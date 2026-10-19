@@ -36,8 +36,10 @@ namespace internodes
 
     // Broad-phase query: all support points whose bounding box intersects
     // the (square) box of the given radius around `point`.
+    // No reserve(support_points_global.size()) here: that allocated room for
+    // every interface point on every single query (multi-MB per call, one
+    // call per interface point in each of the RBF setup loops).
     std::vector<std::pair<Point<dim>, unsigned int>> result_n;
-    result_n.reserve(support_points_global.size());
     rtree.query(bgi::intersects(local_box), std::back_inserter(result_n));
 
     // Narrow-phase check: the broad-phase box query over-selects points in

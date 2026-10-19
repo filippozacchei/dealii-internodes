@@ -1,6 +1,7 @@
 #ifndef INTERNODES_INTERFACE_DOF_HANDLER_RBF_HPP
 #define INTERNODES_INTERFACE_DOF_HANDLER_RBF_HPP
 
+#include <deal.II/lac/lapack_full_matrix.h>
 #include <deal.II/lac/solver_gmres.h>
 #include <deal.II/lac/trilinos_precondition.h>
 
@@ -9,6 +10,7 @@
 
 #include <map>
 #include <memory>
+#include <string>
 
 namespace internodes
 {
@@ -70,7 +72,23 @@ namespace internodes
     setup_destination_points(const std::vector<Point<dim>> &points,
                              const IndexSet                &destination_owned) override;
 
+    /// Number of nonzeros of the RBF matrix `Phi` (a diagnostic: its density
+    /// relative to n_interface^2 is what drives the cost of the Phi solves).
+    types::global_dof_index
+    phi_n_nonzero_elements() const
+    {
+      return Phi.n_nonzero_elements();
+    }
+
   private:
+    /// Name under which this handler's Phi solves are recorded in
+    /// cg_statistics() (by interface size, to tell master from slave).
+    std::string
+    cg_tag() const
+    {
+      return "rbf_phi_n" + std::to_string(interface_dofs_owned().size());
+    }
+
     void
     DoFs_values(const Point<dim>                                    &p,
                 Vector<double>                                       &rhs_vector,
@@ -103,7 +121,22 @@ namespace internodes
     /// until a fix designed for the genuinely-dense case (e.g. a real
     /// distributed dense factorization, not a sparse one) is validated
     /// off the critical path, not iterated live against cluster jobs.
-    TrilinosWrappers::PreconditionAMG preconditioner_Phi;
+    TrilinosWrappers::PreconditionAMG preconditioner_Phi; // unused, kept for the doc above
+
+    /// Phi solve strategy actually in use (see the constructor).
+    std::string phi_solver;
+    /// CG preconditioner for Phi (amg / amg_sub / none strategies).
+    std::unique_ptr<TrilinosWrappers::PreconditionBase> phi_preconditioner;
+    /// Replicated dense Cholesky factor of Phi ("dense" strategy).
+    mutable LAPACKFullMatrix<double> Phi_dense;
+
+    /// Solves Phi x = b with the selected strategy; also fills @p x_full
+    /// with the whole solution on every rank. @return CG iterations (0 for
+    /// the direct strategy).
+    unsigned int
+    solve_Phi(TrilinosWrappers::MPI::Vector       &x,
+              const TrilinosWrappers::MPI::Vector &b,
+              Vector<double>                      &x_full) const;
 
     mutable TrilinosWrappers::MPI::Vector temp;
     mutable Vector<double>                temp_data;

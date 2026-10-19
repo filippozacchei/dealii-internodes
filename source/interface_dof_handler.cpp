@@ -12,7 +12,10 @@
 #include <deal.II/lac/sparsity_tools.h>
 #include <deal.II/lac/vector.h>
 
+#include "internodes/rtree_handler.hpp"
+
 #include <algorithm>
+#include <iterator>
 
 namespace internodes
 {
@@ -180,6 +183,19 @@ namespace internodes
       this->dof_handler()->get_fe().n_dofs_per_cell();
     std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
 
+    // Spatial index of the destination points: each interface cell only
+    // tests the points inside its own (slightly enlarged) bounding box,
+    // instead of every point (the brute-force loop this replaces cost
+    // O(local interface cells x global points) per rank).
+    using PointEntry = std::pair<Point<dim>, unsigned int>;
+    std::vector<PointEntry> point_entries;
+    point_entries.reserve(points.size());
+    for (unsigned int i = 0; i < points.size(); ++i)
+      point_entries.emplace_back(points[i], i);
+    const bgi::rtree<PointEntry, bgi::quadratic<16>> point_tree(point_entries.begin(),
+                                                                point_entries.end());
+    std::vector<PointEntry> candidates;
+
     std::vector<bool> found(points.size(), false);
 
     for (const auto &cell : dof_handler_->active_cell_iterators())
@@ -198,8 +214,24 @@ namespace internodes
         if (!at_interface)
           continue;
 
-        for (unsigned int i = 0; i < points.size(); ++i)
+        // Enlarged a little so it contains every point cell->point_inside()
+        // accepts (which has a small tolerance of its own).
+        const BoundingBox<dim> cell_box = cell->bounding_box();
+        Point<dim>             box_min  = cell_box.get_boundary_points().first;
+        Point<dim>             box_max  = cell_box.get_boundary_points().second;
+        const double           margin   = 1e-6 * cell->diameter();
+        for (unsigned int d = 0; d < dim; ++d)
           {
+            box_min[d] -= margin;
+            box_max[d] += margin;
+          }
+        candidates.clear();
+        point_tree.query(bgi::intersects(BoundingBox<dim>(std::make_pair(box_min, box_max))),
+                         std::back_inserter(candidates));
+
+        for (const PointEntry &candidate : candidates)
+          {
+            const unsigned int i = candidate.second;
             if (found[i] || !cell->point_inside(points[i]))
               continue;
 

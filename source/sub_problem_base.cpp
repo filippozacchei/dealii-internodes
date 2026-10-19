@@ -126,7 +126,7 @@ namespace internodes
   }
 
   void
-  SubProblemBase::assembly_global(bool intermediate)
+  SubProblemBase::update_constraints()
   {
     constraints_dirichlet.clear();
     // Note: reinit() with the locally relevant DoFs is required by modern
@@ -140,7 +140,20 @@ namespace internodes
                                                 *fun,
                                                 constraints_dirichlet);
     constraints_dirichlet.close();
+  }
 
+  void
+  SubProblemBase::set_zero_rhs()
+  {
+    rhs       = 0.;
+    rhs_in    = 0.;
+    rhs_gamma = 0.;
+  }
+
+  void
+  SubProblemBase::assembly_global(bool intermediate)
+  {
+    update_constraints();
     this->assembly(intermediate);
 
     rhs_in    = rhs.block(0);

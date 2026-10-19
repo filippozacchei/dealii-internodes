@@ -140,8 +140,26 @@ namespace internodes
     const auto null_dirichlet = std::make_shared<Functions::ZeroFunction<dim>>();
     const auto null_neumann = std::make_shared<Functions::ZeroFunction<dim>>();
 
-    problem->set_data(null_rhs, null_dirichlet, null_neumann);
-    this->step0(true);
+    // The matrices do not depend on the data (only the right-hand sides and
+    // the values of the Dirichlet constraints do), so they are not assembled
+    // again: rebuild the constraints with zero data and zero the right-hand
+    // sides -- exactly what a zero-data assembly produces. (This used to
+    // reassemble everything twice more per solve: here, and to restore the
+    // real data at the end.)
+    const TrilinosWrappers::MPI::BlockVector master_rhs_real       = problem->master->rhs;
+    const TrilinosWrappers::MPI::Vector      master_rhs_in_real    = problem->master->rhs_in;
+    const TrilinosWrappers::MPI::Vector      master_rhs_gamma_real = problem->master->rhs_gamma;
+    const TrilinosWrappers::MPI::BlockVector slave_rhs_real        = problem->slave->rhs;
+    const TrilinosWrappers::MPI::Vector      slave_rhs_in_real     = problem->slave->rhs_in;
+    const TrilinosWrappers::MPI::Vector      slave_rhs_gamma_real  = problem->slave->rhs_gamma;
+    {
+      TimerOutput::Scope timer_section(timer_output(), "Step 0: homogeneous-phase data update");
+      problem->set_data(null_rhs, null_dirichlet, null_neumann);
+      problem->master->update_constraints();
+      problem->slave->update_constraints();
+      problem->master->set_zero_rhs();
+      problem->slave->set_zero_rhs();
+    }
 
     TrilinosWrappers::MPI::Vector lambda_(
       problem->master->interface_dofHandler_ptr->interface_dofs_owned());
@@ -163,10 +181,20 @@ namespace internodes
     sol_omega_master.add(1.0, uf_master, 1.0, ulambda_master);
     sol_omega_slave.add(1.0, uf_slave, 1.0, ulambda_slave);
 
-    // Restore the real problem data and reassemble, leaving `problem` in
-    // the same state solve() found it in.
-    problem->set_data(rhs_real, dirichlet_real, neumann_real);
-    this->step0();
+    // Restore the real problem data, constraints and right-hand sides,
+    // leaving `problem` in the same state solve() found it in.
+    {
+      TimerOutput::Scope timer_section(timer_output(), "Step 0: homogeneous-phase data update");
+      problem->set_data(rhs_real, dirichlet_real, neumann_real);
+      problem->master->update_constraints();
+      problem->slave->update_constraints();
+      problem->master->rhs       = master_rhs_real;
+      problem->master->rhs_in    = master_rhs_in_real;
+      problem->master->rhs_gamma = master_rhs_gamma_real;
+      problem->slave->rhs        = slave_rhs_real;
+      problem->slave->rhs_in     = slave_rhs_in_real;
+      problem->slave->rhs_gamma  = slave_rhs_gamma_real;
+    }
   }
 
   void
@@ -242,6 +270,8 @@ namespace internodes
                                   solution_,
                                   pb_rhs,
                                   subPb->preconditioner_in_in);
+    record_cg_solve("subdomain_n" + std::to_string(subPb->M_in_in().m()),
+                    control.last_step());
 
     subPb->apply_dirichlet_to_internal(solution_);
   }

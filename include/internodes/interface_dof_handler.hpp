@@ -125,7 +125,10 @@ namespace internodes
       return support_points_;
     }
 
-    std::vector<Point<dim>>
+    /// By reference: this is called inside the innermost neighbor loops
+    /// of the RBF setup; returning a copy there copied the whole global
+    /// point list once per neighbor of every interface point.
+    const std::vector<Point<dim>> &
     support_points_global() const
     {
       return support_points_global_;

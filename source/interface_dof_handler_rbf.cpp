@@ -4,7 +4,9 @@
 #include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/sparsity_tools.h>
 
+#include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 namespace internodes
 {
@@ -37,59 +39,145 @@ namespace internodes
                                n_interface,
                                interface_dofs_relevant());
 
-    for (std::size_t i = 0; i < interface_dofs_owned().n_elements(); ++i)
-      {
-        const Point<dim>   point = this->support_points()[i];
-        const unsigned int idx_i = interface_dofs_owned().nth_index_in_set(i);
+    // interface_dofs_owned() returns a copy: take it once, not per row.
+    const IndexSet owned_interface = this->interface_dofs_owned();
 
-        const auto results = rtree->query(point);
+    std::vector<types::global_dof_index> columns;
+    std::vector<double>                  values;
+    for (std::size_t i = 0; i < owned_interface.n_elements(); ++i)
+      {
+        const unsigned int idx_i = owned_interface.nth_index_in_set(i);
+        const auto         results = rtree->query(this->support_points()[i]);
+        columns.clear();
         for (const auto &entry : results)
-          dsp.add(idx_i, entry.second);
+          columns.push_back(entry.second);
+        std::sort(columns.begin(), columns.end());
+        dsp.add_entries(idx_i, columns.begin(), columns.end(), true);
       }
     dsp.compress();
     SparsityTools::distribute_sparsity_pattern(dsp,
-                                                interface_dofs_owned(),
+                                                owned_interface,
                                                 mpi_comm,
                                                 interface_dofs_relevant());
     sp.copy_from(dsp);
-    Phi.reinit(interface_dofs_owned(), sp, mpi_comm);
+    Phi.reinit(owned_interface, sp, mpi_comm);
 
     pcout() << "Assembling RBF matrix Phi..." << std::endl;
-    for (std::size_t i = 0; i < interface_dofs_owned().n_elements(); ++i)
+    // One row at a time: the row's nonzeros are the kernel at the support
+    // points within the radius -- exactly the columns of the pattern above,
+    // so no per-entry sp.exists() (a linear search of the row, O(row^2) per
+    // row) and a single insertion per row instead of one per entry.
+    for (std::size_t i = 0; i < owned_interface.n_elements(); ++i)
       {
-        const Point<dim>   point = this->support_points()[i];
-        const unsigned int idx_i = interface_dofs_owned().nth_index_in_set(i);
-
-        const auto results = rtree->query(point);
-        DoFs_values(point, rhs, results);
-
+        const Point<dim>   point   = this->support_points()[i];
+        const unsigned int idx_i   = owned_interface.nth_index_in_set(i);
+        const auto         results = rtree->query(point);
+        columns.clear();
+        values.clear();
         for (const auto &entry : results)
-          if (sp.exists(idx_i, entry.second))
-            Phi.set(idx_i, entry.second, rhs(entry.second));
+          {
+            Point<dim> node_distance = point;
+            node_distance -= this->support_points_global()[entry.second];
+            columns.push_back(entry.second);
+            values.push_back(evaluate_rbf(node_distance));
+          }
+        Phi.set(idx_i, columns, values);
       }
     Phi.compress(VectorOperation::insert);
 
-    pcout() << "Factoring Phi and computing RL-RBF scaling factors..."
-             << std::endl;
-    TrilinosWrappers::PreconditionAMG::AdditionalData amg_data;
-    amg_data.higher_order_elements = true;
-    amg_data.smoother_sweeps       = 1;
-    amg_data.smoother_type         = "Chebyshev";
-    amg_data.coarse_type           = "Amesos-KLU";
-    amg_data.aggregation_threshold = 1e-2;
-    preconditioner_Phi.initialize(Phi, amg_data);
+    // Phi solve strategy (experimental, INTERNODES_PHI_SOLVER):
+    //   amg       (default) CG + ML AMG, the original/lifex choice
+    //   amg_sub   CG + ML AMG with the subdomain-solve settings
+    //   none      CG, no preconditioner
+    //   dense     replicated dense Cholesky (LAPACK) on every rank, for
+    //             matrices up to INTERNODES_PHI_DENSE_MAX rows (default
+    //             12000); falls back to amg above that.
+    const char *const env_solver = std::getenv("INTERNODES_PHI_SOLVER");
+    phi_solver = env_solver ? env_solver : "amg";
+    const char *const env_dense_max = std::getenv("INTERNODES_PHI_DENSE_MAX");
+    const unsigned int dense_max = env_dense_max ? std::stoul(env_dense_max) : 12000;
+    if (phi_solver == "dense" && n_interface > dense_max)
+      phi_solver = "amg";
+
+    Timer prec_timer(mpi_comm, true);
+    if (phi_solver == "dense")
+      {
+        // Every rank holds all support points and the R-tree, so it can
+        // build the whole matrix itself, with no communication.
+        Phi_dense.reinit(n_interface, n_interface);
+        Vector<double> row(n_interface);
+        for (unsigned int i = 0; i < n_interface; ++i)
+          {
+            const auto results = rtree->query(this->support_points_global()[i]);
+            DoFs_values(this->support_points_global()[i], row, results);
+            for (const auto &entry : results)
+              Phi_dense(i, entry.second) = row(entry.second);
+          }
+        Phi_dense.set_property(LAPACKSupport::symmetric);
+        Phi_dense.compute_cholesky_factorization();
+      }
+    else if (phi_solver == "none")
+      phi_preconditioner = std::make_unique<TrilinosWrappers::PreconditionIdentity>();
+    else
+      {
+        auto amg = std::make_unique<TrilinosWrappers::PreconditionAMG>();
+        TrilinosWrappers::PreconditionAMG::AdditionalData amg_data;
+        amg_data.smoother_type = "Chebyshev";
+        amg_data.coarse_type   = "Amesos-KLU";
+        if (phi_solver == "amg_sub")
+          {
+            amg_data.higher_order_elements = false;
+            amg_data.smoother_sweeps       = 2;
+            amg_data.aggregation_threshold = 1e-3;
+          }
+        else
+          {
+            amg_data.higher_order_elements = true;
+            amg_data.smoother_sweeps       = 1;
+            amg_data.aggregation_threshold = 1e-2;
+          }
+        amg->initialize(Phi, amg_data);
+        phi_preconditioner = std::move(amg);
+      }
+    prec_timer.stop();
 
     // Rescaling: solve Phi * scaling_factors = 1 (the paper's g(x) = 1 in
     // the rescaled interpolant, Eq. before \eqref{eq:interp}).
-    ReductionControl               control(100000, 1e-12, 1e-10);
-    SolverCG<TrilinosWrappers::MPI::Vector> solver(control);
-    TrilinosWrappers::MPI::Vector  ones(this->interface_dofs_owned());
+    TrilinosWrappers::MPI::Vector ones(this->interface_dofs_owned());
     ones.add(1.);
-
     scaling_factors.reinit(this->interface_dofs_owned());
-    solver.solve(Phi, scaling_factors, ones, preconditioner_Phi);
+    Timer solve_timer(mpi_comm, true);
+    const unsigned int its = solve_Phi(scaling_factors, ones, scaling_factor_vectors);
+    solve_timer.stop();
+    record_cg_solve(cg_tag() + " (scaling)", its);
 
-    scaling_factor_vectors = scaling_factors;
+    const double density = double(Phi.n_nonzero_elements()) / (double(n_interface) * n_interface);
+    pcout() << "  Phi: n=" << n_interface << " nnz=" << Phi.n_nonzero_elements()
+            << " density=" << density << " solver=" << phi_solver
+            << " | setup " << prec_timer.wall_time() << "s"
+            << " | scaling solve " << its << " its, " << solve_timer.wall_time() << "s"
+            << std::endl;
+  }
+
+  unsigned int
+  InterfaceDoFHandlerRBF::solve_Phi(TrilinosWrappers::MPI::Vector       &x,
+                                    const TrilinosWrappers::MPI::Vector &b,
+                                    Vector<double>                      &x_full) const
+  {
+    if (phi_solver == "dense")
+      {
+        x_full = b; // gathers the whole right-hand side on every rank
+        Phi_dense.solve(x_full);
+        for (const auto i : x.locally_owned_elements())
+          x(i) = x_full(i);
+        x.compress(VectorOperation::insert);
+        return 0;
+      }
+    ReductionControl                        control(100000, 1e-12, 1e-10);
+    SolverCG<TrilinosWrappers::MPI::Vector> solver(control);
+    solver.solve(Phi, x, b, *phi_preconditioner);
+    x_full = x;
+    return control.last_step();
   }
 
   double
@@ -174,10 +262,7 @@ namespace internodes
     // in the paper's notation).
     {
       TimerOutput::Scope timer_section(timer_output(), "  interpolate: solve Phi");
-      ReductionControl   control(100000, 1e-12, 1e-10);
-      SolverCG<TrilinosWrappers::MPI::Vector> solver(control);
-      solver.solve(Phi, temp, src, preconditioner_Phi);
-      temp_data = temp;
+      record_cg_solve(cg_tag(), solve_Phi(temp, src, temp_data));
     }
     TimerOutput::Scope timer_section(timer_output(), "  interpolate: evaluate at points");
 

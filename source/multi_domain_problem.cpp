@@ -40,6 +40,7 @@ namespace internodes
       TimerOutput::Scope timer_section(timer_output(), "  interpolateResidual: solve M_gamma");
       solver.solve(slave->M_gamma, residual_slave, src, precond);
     }
+    record_cg_solve("interface_mass", control.last_step());
 
     slave->interface_dofHandler_ptr->interpolate(residual_master,
                                                   residual_slave,

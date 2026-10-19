@@ -48,6 +48,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <map>
@@ -577,6 +578,13 @@ struct SubdomainReport
   double                   h_avg            = 0.;
   double                   rbf_radius       = 0.;
   double                   error            = 0.;
+  // How the interface DoFs (= the rows of the interface operators, Phi
+  // included) are spread over the ranks: min/max owned per rank, and how
+  // many ranks own any at all.
+  types::global_dof_index  interface_owned_min = 0;
+  types::global_dof_index  interface_owned_max = 0;
+  unsigned int             interface_ranks     = 0;
+  types::global_dof_index  phi_nnz             = 0; // 0 for Lagrange
 };
 
 std::string
@@ -675,8 +683,18 @@ write_results(const Parameters                                              &par
           << ", \"n_interface_dofs\": " << r.n_interface_dofs
           << ", \"n_cells\": " << r.n_cells << ", \"h_avg\": " << r.h_avg
           << ", \"rbf_radius\": " << r.rbf_radius << ", \"H1_error\": " << r.error
-          << "}";
+          << ", \"interface_owned_min\": " << r.interface_owned_min
+          << ", \"interface_owned_max\": " << r.interface_owned_max
+          << ", \"interface_ranks\": " << r.interface_ranks
+          << ", \"phi_nnz\": " << r.phi_nnz << "}";
     }
+  out << "\n  },\n";
+  out << "  \"cg_statistics\": {";
+  i = 0;
+  for (const auto &[kind, st] : cg_statistics())
+    out << (i++ ? "," : "") << "\n    \"" << kind << "\": {\"solves\": " << st.n_solves
+        << ", \"iterations\": " << st.n_iterations
+        << ", \"max_iterations\": " << st.max_iterations << "}";
   out << "\n  },\n";
   out << "  \"timings\": " << timings << "\n}\n";
 }
@@ -969,6 +987,11 @@ main(int argc, char *argv[])
                                                                  coefficients,
                                                                  radius_slave);
 
+      if (std::getenv("INTERNODES_EXIT_AFTER_SETUP"))
+        {
+          pcout() << "INTERNODES_EXIT_AFTER_SETUP set: stopping after setup." << std::endl;
+          return 0;
+        }
       pcout() << "Coupling master and slave..." << std::endl;
       auto problem = std::make_shared<MultiDomainProblem>(master, slave);
 
@@ -1060,6 +1083,17 @@ main(int argc, char *argv[])
           report.h_avg      = sub->slice->diameter_avg();
           report.rbf_radius = radius;
           report.error      = h1_error(*sub->slice, *sub->dof_handler, *sol, degree);
+          {
+            const types::global_dof_index owned =
+              sub->interface_dofHandler_ptr->interface_dofs_owned().n_elements();
+            report.interface_owned_min = Utilities::MPI::min(owned, mpi_comm);
+            report.interface_owned_max = Utilities::MPI::max(owned, mpi_comm);
+            report.interface_ranks =
+              Utilities::MPI::sum(owned > 0 ? 1u : 0u, mpi_comm);
+            if (const auto rbf = std::dynamic_pointer_cast<InterfaceDoFHandlerRBF>(
+                  sub->interface_dofHandler_ptr))
+              report.phi_nnz = rbf->phi_n_nonzero_elements();
+          }
           error_squared += report.error * report.error;
           reports.emplace_back(name, report);
         }

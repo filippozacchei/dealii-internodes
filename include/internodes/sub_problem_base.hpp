@@ -114,6 +114,19 @@ namespace internodes
     virtual void
     assembly_global(bool intermediate = false);
 
+    /// Rebuilds the Dirichlet constraints from the current data (set_data()),
+    /// without assembling anything. The matrices depend only on *which* DoFs
+    /// are constrained, not on the constraint values (those only enter the
+    /// right-hand side), so after set_data() the matrices stay valid.
+    void
+    update_constraints();
+
+    /// Zeroes the right-hand sides (`rhs`, `rhs_in`, `rhs_gamma`): what
+    /// assembly_global() produces when forcing, Dirichlet and Neumann data
+    /// are all zero.
+    void
+    set_zero_rhs();
+
     /// (Re-)initializes the algebraic multigrid preconditioner for the
     /// internal-internal block $A_{k,k}$.
     void
