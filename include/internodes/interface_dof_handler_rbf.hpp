@@ -1,7 +1,12 @@
 #ifndef INTERNODES_INTERFACE_DOF_HANDLER_RBF_HPP
 #define INTERNODES_INTERFACE_DOF_HANDLER_RBF_HPP
 
+#include <deal.II/base/process_grid.h>
+
 #include <deal.II/lac/lapack_full_matrix.h>
+#ifdef DEAL_II_WITH_SCALAPACK
+#  include <deal.II/lac/scalapack.h>
+#endif
 #include <deal.II/lac/solver_gmres.h>
 #include <deal.II/lac/trilinos_precondition.h>
 
@@ -129,6 +134,12 @@ namespace internodes
     std::unique_ptr<TrilinosWrappers::PreconditionBase> phi_preconditioner;
     /// Replicated dense Cholesky factor of Phi ("dense" strategy).
     mutable LAPACKFullMatrix<double> Phi_dense;
+#ifdef DEAL_II_WITH_SCALAPACK
+    /// "scalapack" strategy: Phi^{-1}, dense, block-cyclically distributed
+    /// over all ranks (only its lower triangle is valid after invert()).
+    std::shared_ptr<Utilities::MPI::ProcessGrid> phi_grid;
+    std::unique_ptr<ScaLAPACKMatrix<double>>     Phi_inv;
+#endif
 
     /// Solves Phi x = b with the selected strategy; also fills @p x_full
     /// with the whole solution on every rank. @return CG iterations (0 for

@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <iomanip>
+#include <sstream>
 
 namespace internodes
 {
@@ -86,18 +88,35 @@ namespace internodes
     Phi.compress(VectorOperation::insert);
 
     // Phi solve strategy (experimental, INTERNODES_PHI_SOLVER):
-    //   amg       (default) CG + ML AMG, the original/lifex choice
+    //   none      (default) CG, no preconditioner. Measured on the real
+    //             Test 5 matrices (8 ranks): 113 s vs 345 s (master Phi) and
+    //             74 s vs 172 s (slave Phi) per solve against amg -- ML AMG
+    //             does not help an RBF Gram matrix (all-positive
+    //             off-diagonals, constant unit diagonal), it even raises
+    //             the slave's iteration count.
+    //   amg       CG + ML AMG, the original/lifex choice
     //   amg_sub   CG + ML AMG with the subdomain-solve settings
-    //   none      CG, no preconditioner
+    //   scalapack Phi^{-1} computed once as a distributed dense matrix
+    //             (ScaLAPACK Cholesky + inverse); each solve is then a
+    //             distributed dense mat-vec. Falls back to amg if deal.II
+    //             was built without ScaLAPACK.
     //   dense     replicated dense Cholesky (LAPACK) on every rank, for
     //             matrices up to INTERNODES_PHI_DENSE_MAX rows (default
     //             12000); falls back to amg above that.
     const char *const env_solver = std::getenv("INTERNODES_PHI_SOLVER");
-    phi_solver = env_solver ? env_solver : "amg";
+    phi_solver = env_solver ? env_solver : "none";
     const char *const env_dense_max = std::getenv("INTERNODES_PHI_DENSE_MAX");
     const unsigned int dense_max = env_dense_max ? std::stoul(env_dense_max) : 12000;
     if (phi_solver == "dense" && n_interface > dense_max)
       phi_solver = "amg";
+#ifndef DEAL_II_WITH_SCALAPACK
+    if (phi_solver == "scalapack")
+      {
+        pcout() << "  (deal.II has no ScaLAPACK: Phi solver falls back to amg)" << std::endl;
+        phi_solver = "amg";
+      }
+#endif
+    double phi_rcond = -1.;
 
     Timer prec_timer(mpi_comm, true);
     if (phi_solver == "dense")
@@ -116,6 +135,38 @@ namespace internodes
         Phi_dense.set_property(LAPACKSupport::symmetric);
         Phi_dense.compute_cholesky_factorization();
       }
+#ifdef DEAL_II_WITH_SCALAPACK
+    else if (phi_solver == "scalapack")
+      {
+        const unsigned int block = 64;
+        phi_grid = std::make_shared<Utilities::MPI::ProcessGrid>(
+          mpi_comm, n_interface, n_interface, block, block);
+        Phi_inv = std::make_unique<ScaLAPACKMatrix<double>>(n_interface,
+                                                            phi_grid,
+                                                            block,
+                                                            LAPACKSupport::symmetric);
+        // Each process fills its own block-cyclic block directly from the
+        // (replicated) support points: no communication.
+        if (phi_grid->is_process_active())
+          for (unsigned int lr = 0; lr < Phi_inv->local_m(); ++lr)
+            {
+              const unsigned int gi = Phi_inv->global_row(lr);
+              for (unsigned int lc = 0; lc < Phi_inv->local_n(); ++lc)
+                {
+                  const unsigned int gj = Phi_inv->global_column(lc);
+                  Point<dim> d = this->support_points_global()[gi];
+                  d -= this->support_points_global()[gj];
+                  // same cut-off as the R-tree query of the sparse Phi
+                  Phi_inv->local_el(lr, lc) =
+                    (d.norm_square() <= radius * radius) ? evaluate_rbf(d) : 0.;
+                }
+            }
+        const double a_norm = Phi_inv->linfty_norm();
+        Phi_inv->compute_cholesky_factorization();
+        phi_rcond = Phi_inv->reciprocal_condition_number(a_norm);
+        Phi_inv->invert();
+      }
+#endif
     else if (phi_solver == "none")
       phi_preconditioner = std::make_unique<TrilinosWrappers::PreconditionIdentity>();
     else
@@ -155,6 +206,14 @@ namespace internodes
     pcout() << "  Phi: n=" << n_interface << " nnz=" << Phi.n_nonzero_elements()
             << " density=" << density << " solver=" << phi_solver
             << " | setup " << prec_timer.wall_time() << "s"
+            << [&] {
+                 // own stream: setprecision on pcout would leak into every
+                 // later print (it did -- the H1 error lost its digits)
+                 std::ostringstream o;
+                 if (phi_rcond >= 0.)
+                   o << " rcond=" << std::scientific << std::setprecision(2) << phi_rcond;
+                 return o.str();
+               }()
             << " | scaling solve " << its << " its, " << solve_timer.wall_time() << "s"
             << std::endl;
   }
@@ -173,6 +232,36 @@ namespace internodes
         x.compress(VectorOperation::insert);
         return 0;
       }
+#ifdef DEAL_II_WITH_SCALAPACK
+    if (phi_solver == "scalapack")
+      {
+        // x = Phi^{-1} b with the distributed inverse: each process applies
+        // its local block (lower triangle only, mirrored), then one sum.
+        x_full = b; // the whole right-hand side on every rank
+        Vector<double> y(x_full.size());
+        if (phi_grid->is_process_active())
+          for (unsigned int lr = 0; lr < Phi_inv->local_m(); ++lr)
+            {
+              const unsigned int gi = Phi_inv->global_row(lr);
+              for (unsigned int lc = 0; lc < Phi_inv->local_n(); ++lc)
+                {
+                  const unsigned int gj = Phi_inv->global_column(lc);
+                  if (gj > gi)
+                    continue;
+                  const double a = Phi_inv->local_el(lr, lc);
+                  y(gi) += a * x_full(gj);
+                  if (gj < gi)
+                    y(gj) += a * x_full(gi);
+                }
+            }
+        Utilities::MPI::sum(y, mpi_comm, y);
+        x_full = y;
+        for (const auto i : x.locally_owned_elements())
+          x(i) = x_full(i);
+        x.compress(VectorOperation::insert);
+        return 0;
+      }
+#endif
     ReductionControl                        control(100000, 1e-12, 1e-10);
     SolverCG<TrilinosWrappers::MPI::Vector> solver(control);
     solver.solve(Phi, x, b, *phi_preconditioner);
