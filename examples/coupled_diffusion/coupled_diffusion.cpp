@@ -46,6 +46,8 @@
 #include "internodes/sub_problem_diffusion_reaction.hpp"
 #include "internodes/utilities.hpp"
 
+#include "git_version.h"
+
 #include <array>
 #include <cmath>
 #include <cstdlib>
@@ -660,6 +662,19 @@ write_results(const Parameters                                              &par
   out.precision(12);
   out << "{\n";
   out << "  \"mode\": \"" << (parameters.monolithic ? "monolithic" : "coupled") << "\",\n";
+  {
+    // Provenance: the commit the binary was built from, and the experimental
+    // solver switches in effect (their defaults when unset).
+    const auto env_or = [](const char *name, const char *dflt) {
+      const char *const v = std::getenv(name);
+      return std::string(v ? v : dflt);
+    };
+    out << "  \"git_version\": \"" << INTERNODES_GIT_VERSION << "\",\n";
+    out << "  \"solver_options\": {\"phi_solver\": \""
+        << env_or("INTERNODES_PHI_SOLVER", "none") << "\", \"volume_amg\": \""
+        << env_or("INTERNODES_VOLUME_AMG", "ho_agg") << "\", \"schur_prec\": \""
+        << env_or("INTERNODES_SCHUR_PREC", "cg") << "\"},\n";
+  }
   out << "  \"geometry\": \""
       << (parameters.geometry == GeometryType::adjacent_boxes ? "adjacent_boxes" :
                                                                  "hyper_shells")
