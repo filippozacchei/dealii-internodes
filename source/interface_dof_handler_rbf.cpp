@@ -165,6 +165,15 @@ namespace internodes
         Phi_inv->compute_cholesky_factorization();
         phi_rcond = Phi_inv->reciprocal_condition_number(a_norm);
         Phi_inv->invert();
+        if (phi_grid->is_process_active())
+          {
+            phi_inv_rows.resize(Phi_inv->local_m());
+            phi_inv_cols.resize(Phi_inv->local_n());
+            for (unsigned int lr = 0; lr < Phi_inv->local_m(); ++lr)
+              phi_inv_rows[lr] = Phi_inv->global_row(lr);
+            for (unsigned int lc = 0; lc < Phi_inv->local_n(); ++lc)
+              phi_inv_cols[lc] = Phi_inv->global_column(lc);
+          }
       }
 #endif
     else if (phi_solver == "none")
@@ -239,20 +248,25 @@ namespace internodes
         // its local block (lower triangle only, mirrored), then one sum.
         x_full = b; // the whole right-hand side on every rank
         Vector<double> y(x_full.size());
+        // Column by column (ScaLAPACK local storage is column-major), with the
+        // global indices cached at setup.
         if (phi_grid->is_process_active())
-          for (unsigned int lr = 0; lr < Phi_inv->local_m(); ++lr)
+          for (unsigned int lc = 0; lc < phi_inv_cols.size(); ++lc)
             {
-              const unsigned int gi = Phi_inv->global_row(lr);
-              for (unsigned int lc = 0; lc < Phi_inv->local_n(); ++lc)
+              const unsigned int gj  = phi_inv_cols[lc];
+              const double       xj  = x_full(gj);
+              double             acc = 0.;
+              for (unsigned int lr = 0; lr < phi_inv_rows.size(); ++lr)
                 {
-                  const unsigned int gj = Phi_inv->global_column(lc);
-                  if (gj > gi)
+                  const unsigned int gi = phi_inv_rows[lr];
+                  if (gi < gj)
                     continue;
                   const double a = Phi_inv->local_el(lr, lc);
-                  y(gi) += a * x_full(gj);
-                  if (gj < gi)
-                    y(gj) += a * x_full(gi);
+                  y(gi) += a * xj;
+                  if (gi > gj)
+                    acc += a * x_full(gi);
                 }
+              y(gj) += acc;
             }
         Utilities::MPI::sum(y, mpi_comm, y);
         x_full = y;

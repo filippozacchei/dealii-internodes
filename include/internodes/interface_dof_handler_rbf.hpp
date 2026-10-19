@@ -139,6 +139,9 @@ namespace internodes
     /// over all ranks (only its lower triangle is valid after invert()).
     std::shared_ptr<Utilities::MPI::ProcessGrid> phi_grid;
     std::unique_ptr<ScaLAPACKMatrix<double>>     Phi_inv;
+    /// Global row/column of each local row/column of Phi_inv (cached so the
+    /// per-solve mat-vec does not recompute them per entry).
+    std::vector<unsigned int> phi_inv_rows, phi_inv_cols;
 #endif
 
     /// Solves Phi x = b with the selected strategy; also fills @p x_full
