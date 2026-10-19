@@ -1,3 +1,4 @@
+#include "internodes/amg_settings.hpp"
 #include "internodes/schur_preconditioner.hpp"
 
 #include <deal.II/dofs/dof_tools.h>
@@ -7,6 +8,9 @@
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
 #include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/sparsity_tools.h>
+
+#include <cstdlib>
+#include <string>
 
 namespace internodes
 {
@@ -50,16 +54,34 @@ namespace internodes
       rhs[interface_indices[i]] = src[owned_indices[i]];
     rhs.compress(VectorOperation::insert);
 
-    const double       tolerance = 1e-13;
-    const double       reduction = 1e-11;
-    const unsigned int max_iters = 1000000;
-    ReductionControl control(max_iters, tolerance, reduction, false, false);
-    SolverCG<TrilinosWrappers::MPI::Vector> solver(control);
-    {
-      TimerOutput::Scope timer_section(timer_output(), "  Schur preconditioner: apply");
-      solver.solve(matrix, dst_global, rhs, preconditioner_problem);
-    }
-    record_cg_solve("schur_preconditioner", control.last_step());
+    // INTERNODES_SCHUR_PREC (experimental):
+    //   cg (default)  CG + AMG to a 1e-11 relative reduction (the original)
+    //   vcycle        a single AMG V-cycle: a fixed linear operator, so it
+    //                 stays valid with right-preconditioned GMRES; much
+    //                 cheaper per application, possibly more GMRES its.
+    static const std::string variant = [] {
+      const char *const env = std::getenv("INTERNODES_SCHUR_PREC");
+      return std::string(env ? env : "cg");
+    }();
+    if (variant == "vcycle")
+      {
+        TimerOutput::Scope timer_section(timer_output(), "  Schur preconditioner: apply");
+        preconditioner_problem.vmult(dst_global, rhs);
+        record_cg_solve("schur_preconditioner", 1);
+      }
+    else
+      {
+        const double       tolerance = 1e-13;
+        const double       reduction = 1e-11;
+        const unsigned int max_iters = 1000000;
+        ReductionControl control(max_iters, tolerance, reduction, false, false);
+        SolverCG<TrilinosWrappers::MPI::Vector> solver(control);
+        {
+          TimerOutput::Scope timer_section(timer_output(), "  Schur preconditioner: apply");
+          solver.solve(matrix, dst_global, rhs, preconditioner_problem);
+        }
+        record_cg_solve("schur_preconditioner", control.last_step());
+      }
 
     for (unsigned int i = 0; i < owned_indices.size(); ++i)
       dst[owned_indices[i]] = dst_global[interface_indices[i]];
@@ -118,12 +140,7 @@ namespace internodes
     matrix.compress(VectorOperation::add);
     rhs.compress(VectorOperation::add);
 
-    TrilinosWrappers::PreconditionAMG::AdditionalData amg_data;
-    amg_data.higher_order_elements = false;
-    amg_data.aggregation_threshold = 1e-3;
-    amg_data.smoother_sweeps       = 2;
-    amg_data.smoother_type         = "Chebyshev";
-    amg_data.coarse_type           = "Amesos-KLU";
+    const auto amg_data = volume_amg_data();
 
     preconditioner_problem.initialize(matrix, amg_data);
   }

@@ -1,3 +1,4 @@
+#include "internodes/amg_settings.hpp"
 #include "internodes/sub_problem_base.hpp"
 
 #include <deal.II/base/index_set.h>
@@ -175,12 +176,7 @@ namespace internodes
   void
   SubProblemBase::assembly_preconditioner()
   {
-    TrilinosWrappers::PreconditionAMG::AdditionalData amg_data;
-    amg_data.higher_order_elements = false;
-    amg_data.aggregation_threshold = 1e-3;
-    amg_data.smoother_sweeps       = 2;
-    amg_data.smoother_type         = "Chebyshev";
-    amg_data.coarse_type           = "Amesos-KLU";
+    const auto amg_data = volume_amg_data();
 
     preconditioner_in_in.initialize(M_in_in(), amg_data);
   }
