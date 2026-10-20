@@ -159,35 +159,57 @@ namespace internodes
 #ifdef DEAL_II_WITH_SCALAPACK
     else if (phi_solver == "scalapack")
       {
-        const unsigned int block = 64;
-        phi_grid = std::make_shared<Utilities::MPI::ProcessGrid>(
-          mpi_comm, n_interface, n_interface, block, block);
-        Phi_inv = std::make_unique<ScaLAPACKMatrix<double>>(n_interface,
-                                                            phi_grid,
-                                                            block,
-                                                            LAPACKSupport::symmetric);
-        // Each process fills its own block-cyclic block directly from the
-        // (replicated) support points: no communication.
-        if (phi_grid->is_process_active())
-          for (unsigned int lr = 0; lr < Phi_inv->local_m(); ++lr)
-            {
-              const unsigned int gi = Phi_inv->global_row(lr);
-              for (unsigned int lc = 0; lc < Phi_inv->local_n(); ++lc)
-                {
-                  const unsigned int gj = Phi_inv->global_column(lc);
-                  Point<dim> d = this->support_points_global()[gi];
-                  d -= this->support_points_global()[gj];
-                  // same cut-off as the R-tree query of the sparse Phi
-                  Phi_inv->local_el(lr, lc) =
-                    (d.norm_square() <= radius * radius) ? evaluate_rbf(d) : 0.;
-                }
-            }
-        const double a_norm = Phi_inv->linfty_norm();
-        Phi_inv->compute_cholesky_factorization();
-        phi_rcond = Phi_inv->reciprocal_condition_number(a_norm);
-        Phi_inv->invert();
-        if (phi_grid->is_process_active())
+        // A square process grid no larger than the number of 64x64 blocks,
+        // built on a sub-communicator holding exactly its ranks: no rank is
+        // ever "inactive" in deal.II's sense. (With inactive ranks, deal.II
+        // broadcasts some scalar results -- norms, condition numbers -- over
+        // an extra communicator, which crashed with "Invalid communicator"
+        // under Intel MPI on Galileo100 for a small matrix.) Ranks outside
+        // the grid skip ScaLAPACK and contribute nothing to each solve.
+        const unsigned int block    = 64;
+        const unsigned int n_blocks = (n_interface + block - 1) / block;
+        const unsigned int n_ranks  = Utilities::MPI::n_mpi_processes(mpi_comm);
+        unsigned int       side     = 1;
+        while ((side + 1) * (side + 1) <= n_ranks && side + 1 <= n_blocks)
+          ++side;
+        const unsigned int my_rank = Utilities::MPI::this_mpi_process(mpi_comm);
+        const int ierr = MPI_Comm_split(mpi_comm,
+                                        my_rank < side * side ? 0 : MPI_UNDEFINED,
+                                        my_rank,
+                                        &phi_comm);
+        AssertThrowMPI(ierr);
+
+        if (phi_comm != MPI_COMM_NULL)
           {
+            phi_grid = std::make_shared<Utilities::MPI::ProcessGrid>(phi_comm, side, side);
+            Phi_inv  = std::make_unique<ScaLAPACKMatrix<double>>(n_interface,
+                                                                 phi_grid,
+                                                                 block,
+                                                                 LAPACKSupport::symmetric);
+            // Each process fills its own block-cyclic block directly from
+            // the (replicated) support points: no communication.
+            for (unsigned int lr = 0; lr < Phi_inv->local_m(); ++lr)
+              {
+                const unsigned int gi = Phi_inv->global_row(lr);
+                for (unsigned int lc = 0; lc < Phi_inv->local_n(); ++lc)
+                  {
+                    const unsigned int gj = Phi_inv->global_column(lc);
+                    Point<dim> d = this->support_points_global()[gi];
+                    d -= this->support_points_global()[gj];
+                    // same cut-off as the R-tree query of the sparse Phi
+                    Phi_inv->local_el(lr, lc) =
+                      (d.norm_square() <= radius * radius) ? evaluate_rbf(d) : 0.;
+                  }
+              }
+            // Condition number: diagnostic only, opt-in
+            // (INTERNODES_PHI_RCOND=1); it needs an extra norm computation.
+            const bool want_rcond = std::getenv("INTERNODES_PHI_RCOND") != nullptr;
+            const double a_norm = want_rcond ? Phi_inv->linfty_norm() : 0.;
+            Phi_inv->compute_cholesky_factorization();
+            if (want_rcond)
+              phi_rcond = Phi_inv->reciprocal_condition_number(a_norm);
+            Phi_inv->invert();
+
             phi_inv_rows.resize(Phi_inv->local_m());
             phi_inv_cols.resize(Phi_inv->local_n());
             for (unsigned int lr = 0; lr < Phi_inv->local_m(); ++lr)
@@ -271,7 +293,7 @@ namespace internodes
         Vector<double> y(x_full.size());
         // Column by column (ScaLAPACK local storage is column-major), with the
         // global indices cached at setup.
-        if (phi_grid->is_process_active())
+        if (Phi_inv) // only the ranks of the process grid hold a block
           for (unsigned int lc = 0; lc < phi_inv_cols.size(); ++lc)
             {
               const unsigned int gj  = phi_inv_cols[lc];
@@ -302,6 +324,17 @@ namespace internodes
     solver.solve(Phi, x, b, *phi_preconditioner);
     x_full = x;
     return control.last_step();
+  }
+
+  InterfaceDoFHandlerRBF::~InterfaceDoFHandlerRBF()
+  {
+#ifdef DEAL_II_WITH_SCALAPACK
+    // The ScaLAPACK objects use phi_comm: release them first.
+    Phi_inv.reset();
+    phi_grid.reset();
+    if (phi_comm != MPI_COMM_NULL)
+      Utilities::MPI::free_communicator(phi_comm);
+#endif
   }
 
   double

@@ -56,6 +56,8 @@ namespace internodes
 
     InterfaceDoFHandlerRBF() : InterfaceDoFHandler() {}
 
+    ~InterfaceDoFHandlerRBF() override;
+
     /// Evaluates the chosen RBF kernel at @p distance (i.e. at $x -
     /// x_j^{\Gamma_k}$ for the node the kernel is centered at), with
     /// support radius `radius`.
@@ -144,6 +146,9 @@ namespace internodes
 #ifdef DEAL_II_WITH_SCALAPACK
     /// "scalapack" strategy: Phi^{-1}, dense, block-cyclically distributed
     /// over all ranks (only its lower triangle is valid after invert()).
+    /// Sub-communicator of the ranks in the process grid (MPI_COMM_NULL on
+    /// the others); freed in the destructor.
+    MPI_Comm                                     phi_comm = MPI_COMM_NULL;
     std::shared_ptr<Utilities::MPI::ProcessGrid> phi_grid;
     std::unique_ptr<ScaLAPACKMatrix<double>>     Phi_inv;
     /// Global row/column of each local row/column of Phi_inv (cached so the
