@@ -673,7 +673,7 @@ write_results(const Parameters                                              &par
     out << "  \"git_version\": \"" << INTERNODES_GIT_VERSION << "\",\n";
     out << "  \"solver_options\": {\"phi_solver\": \""
         << env_or("INTERNODES_PHI_SOLVER", "auto") << "\", \"volume_amg\": \""
-        << env_or("INTERNODES_VOLUME_AMG", "ho_agg") << "\", \"schur_prec\": \""
+        << env_or("INTERNODES_VOLUME_AMG", "lifex") << "\", \"schur_prec\": \""
         << env_or("INTERNODES_SCHUR_PREC", "cg") << "\"},\n";
   }
   out << "  \"geometry\": \""

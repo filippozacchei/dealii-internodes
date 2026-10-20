@@ -10,22 +10,23 @@ namespace internodes
 {
   /// ML AMG settings for the volume (subdomain and Schur-preconditioner)
   /// solves. Experimental switch INTERNODES_VOLUME_AMG:
-  ///   ho_agg (default) higher_order_elements + elliptic, aggregation_threshold
-  ///                    0.02 (close to lifex's older, commented-out 1e-2).
-  ///                    Measured (8 laptop ranks): full Test 5 (P2) Step 3
-  ///                    248 -> 208 s, CG its/solve -15-17%; Test 1 shape (P1)
-  ///                    -8%; Test 4 shape neutral; identical GMRES iterations
-  ///                    and H1 errors in all cases.
-  ///   lifex            the previous settings (lifex's active code):
-  ///                    aggregation_threshold 1e-3, no higher-order flag
-  ///   ho               ho_agg with aggregation_threshold 1e-3 (no change
-  ///                    vs lifex: the higher-order flag alone does nothing)
-  ///   ho_w             ho with W-cycles
+  ///   lifex (default)  aggregation_threshold 1e-3, no higher-order flag
+  ///                    (lifex's active settings)
+  ///   ho_agg           higher_order_elements + elliptic, aggregation 0.02.
+  ///                    Fewer CG iterations for P2 (Test 5: -16-20%), but on
+  ///                    Galileo100 each iteration costs 25-50% more at 768
+  ///                    ranks (coarser hierarchy, coarse levels spread over
+  ///                    many ranks); iteration counts for P1 (Tests 1, 4)
+  ///                    and P2/P4 (Test 3) unchanged at full scale. Net:
+  ///                    faster at 48-192 ranks, slower at 768 in every test
+  ///                    -- it hurts strong scaling, so it is not the default.
+  ///   ho               ho_agg with aggregation 1e-3 (same as lifex)
+  ///   ho_w             ho with W-cycles (slower)
   inline dealii::TrilinosWrappers::PreconditionAMG::AdditionalData
   volume_amg_data()
   {
     const char *const env     = std::getenv("INTERNODES_VOLUME_AMG");
-    const std::string variant = env ? env : "ho_agg";
+    const std::string variant = env ? env : "lifex";
 
     dealii::TrilinosWrappers::PreconditionAMG::AdditionalData amg_data;
     amg_data.smoother_type = "Chebyshev";
