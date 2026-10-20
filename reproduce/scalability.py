@@ -58,6 +58,7 @@ TESTS = {
     3: {"figure": "RBF_Cubi_p2r7-p4r5_r=1_galileo", "suffix": ""},
     4: {"figure": "RBF_Shell_p1r7-p1r6_r=05_galileo", "suffix": ""},
     5: {"figure": "RBF_Shell_p2r6-p2r5_r=10_galileo", "suffix": ""},
+    6: {"figure": "RBF_Shell_p2r7-p2r6_r=10_galileo", "suffix": ""},  # Test 5 refined once more; not in the paper's Table 1
 }
 
 # (label, timer sections of the results file that are added up)

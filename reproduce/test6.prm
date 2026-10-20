@@ -1,0 +1,37 @@
+# Not in the paper's Table 1: Test 5 refined once more on both sides
+# (shell refinement 6/5 instead of 5/4), to compare against Test 5 with
+# enough degrees of freedom per process for the subdomain solves to scale
+# (master ~1.27e7 P2 DoFs, like Tests 1-4; slave ~1.6e6). Same r_f = 10, so
+# the RBF matrices are ~4x larger (master ~9.8e4 rows, ~2% dense; slave
+# ~2.5e4, ~16%): the dense Phi factorization is ~64x more expensive than
+# in Test 5 (one-time cost).
+subsection Geometry
+  set Type                     = hyper_shells
+  set Inner radius             = 0.5
+  set Interface radius         = 0.75
+  set Outer radius             = 1.0
+  set Shell refinement master  = 6
+  set Shell refinement slave   = 5
+end
+
+subsection Discretization
+  set Master degree = 2
+  set Slave degree  = 2
+  set RBF radius        = 0.0
+  set RBF radius factor = 10
+end
+
+subsection Boundary conditions
+  set Dirichlet ids master = 0
+  set Neumann ids master   =
+  set Interface id master  = 1
+  set Dirichlet ids slave = 1
+  set Neumann ids slave   =
+  set Interface id slave  = 0
+end
+
+subsection Solver
+  set GMRES tolerance      = 1e-14
+  set GMRES reduction      = 1e-8
+  set GMRES max iterations = 1000
+end
