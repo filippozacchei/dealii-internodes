@@ -170,9 +170,13 @@ def load_test(n, tag=None):
     return dict(sorted(found.items()))
 
 
-def median_min_max(values):
-    v = np.sort(np.asarray(values, dtype=float))
-    return np.median(v), v[0], v[-1]
+def median_iqr(values):
+    """Median and interquartile range (25th, 75th percentile) of the repeats:
+    the bars of the figures. Unlike min-max, a single run on a slow node
+    (seen on Galileo100: one run in five up to 4x slower, with identical
+    iteration counts) does not stretch them over the whole plot."""
+    v = np.asarray(values, dtype=float)
+    return np.median(v), np.percentile(v, 25), np.percentile(v, 75)
 
 
 def total_wall(result):
@@ -211,12 +215,12 @@ def plot_test(n, formats, tag=None):
     n_repeats = {p: len(runs) for p, runs in data.items()}
     # per phase: median / min / max over the repeats at each core count
     stats = {
-        label: np.array([median_min_max([phase_times(r)[label] for r in runs]) for runs in data.values()])
+        label: np.array([median_iqr([phase_times(r)[label] for r in runs]) for runs in data.values()])
         for label in SERIES
     }
     times = {label: stats[label][:, 0] for label in SERIES}
     if max(n_repeats.values()) > 1:
-        print(f"  test {n}: repeats per core count {sorted(set(n_repeats.values()))}; largest spreads (max-min)/median:")
+        print(f"  test {n}: repeats per core count {sorted(set(n_repeats.values()))}; largest interquartile ranges (relative to the median):")
         spreads = sorted(
             ((st[i, 2] - st[i, 1]) / st[i, 0], label, int(cores[i]))
             for label, st in stats.items() for i in range(len(cores)) if st[i, 0] > 0.05
@@ -237,7 +241,7 @@ def plot_test(n, formats, tag=None):
                 continue
             st = stats[label][valid]
             if kind == "scalability":
-                # median T(p0) over the repeats at p, with the range of the repeats at p
+                # median T(p0) over the repeats at p, with the interquartile range of the repeats at p
                 y, lo, hi = t[valid][0] / st[:, 0], t[valid][0] / st[:, 2], t[valid][0] / st[:, 1]
             else:
                 y, lo, hi = st[:, 0], st[:, 1], st[:, 2]

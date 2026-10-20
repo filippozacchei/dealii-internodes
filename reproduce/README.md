@@ -157,7 +157,8 @@ over the ranks of its accumulated wall time. The speed-up is
 $T(p_0)/T(p)$ with $p_0$ the smallest core count, and the ideal curve in the
 time plot is normalised to 1 s at $p_0$, as in the paper. With repeated runs
 (`prepare --repeats 5`, jobs `test<n>_np<cores>_r<k>`) every point is the
-median over the repeats and the bars span min-max. `scalability_detail.py
+median over the repeats and the bars span the interquartile range
+(25th-75th percentile). `scalability_detail.py
 --tag <tag>` plots every timer separately (not for the paper).
 
 Results behind the paper's figures:

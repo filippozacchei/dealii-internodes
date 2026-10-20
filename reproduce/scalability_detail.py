@@ -10,7 +10,7 @@ For each test writes, to figures/scalability/<tag>/detail/:
     testN_speedup.png   speed-up T(p0)/T(p) per timer, by group
     testN_iterations.png  CG iterations per solve, by kind of inner solve
 With repeated runs (testN_npP_rK), every point is the median over repeats
-and the bars span min-max.
+and the bars span the interquartile range.
 """
 
 import argparse
@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from scalability import ROOT, load_test, median_min_max  # noqa: E402
+from scalability import ROOT, load_test, median_iqr  # noqa: E402
 
 # Timer sections by role. Names are matched after stripping leading blanks
 # (nested sections are indented in some versions of the code).
@@ -97,7 +97,7 @@ def series(data, name):
         values = [timer(r, name) for r in runs]
         if all(v is not None and v > 0 for v in values):
             cores.append(p)
-            stats.append(median_min_max(values))
+            stats.append(median_iqr(values))
     return np.array(cores), np.array(stats).reshape(-1, 3)
 
 
@@ -143,7 +143,7 @@ def plot_groups(data, n, kind, out):
     meta = next(iter(data.values()))[0]
     n_rep = sorted({len(r) for r in data.values()})
     fig.suptitle(f"Test {n} -- {kind} of every timer (commit {meta.get('git_version', '?')}, "
-                 f"repeats per point {n_rep}, median with min-max)")
+                 f"repeats per point {n_rep}, median, bars: interquartile range)")
     fig.tight_layout()
     fig.savefig(out, dpi=130)
     plt.close(fig)
