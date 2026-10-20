@@ -113,9 +113,12 @@ def prepare(args):
     results = _results_dir(args.tag)
     results.mkdir(parents=True, exist_ok=True)
     names = []
+    repeats = [None] if args.repeats <= 1 and args.repeat_start <= 1 else \
+        list(range(args.repeat_start, args.repeat_start + args.repeats))
     for n in map(int, args.tests.split(",")):
         for p in map(int, args.cores.split(",")):
-            name = f"test{n}_np{p}"
+          for k in repeats:
+            name = f"test{n}_np{p}" + (f"_r{k}" if k is not None else "")
             sections = test_sections(n, args.levels_down)
             sections.setdefault("Run", {})["Results file"] = str(results / f"{name}.json")
             prm = results / f"{name}.prm"
@@ -146,12 +149,22 @@ def run_local(args):
 
 # ---------------------------------------------------------------------------
 def load_test(n, tag=None):
-    """{cores: results} for test n."""
+    """{cores: [results of every repeat]} for test n. A plain testN_npP.json
+    counts as one repeat, testN_npP_rK.json as the others. Refuses to mix
+    runs built from different commits (results files record it)."""
     found = {}
     for path in _results_dir(tag).glob(f"test{n}_np*.json"):
-        p = int(path.stem.split("_np")[1])
-        found[p] = json.loads(path.read_text())
+        p = int(path.stem.split("_np")[1].split("_r")[0])
+        found.setdefault(p, []).append(json.loads(path.read_text()))
+    versions = {r.get("git_version", "unknown") for runs in found.values() for r in runs}
+    if len(versions) > 1:
+        sys.exit(f"test {n} ({tag}): results from different commits {sorted(versions)}; not mixing them")
     return dict(sorted(found.items()))
+
+
+def median_min_max(values):
+    v = np.sort(np.asarray(values, dtype=float))
+    return np.median(v), v[0], v[-1]
 
 
 def phase_times(result):
@@ -166,7 +179,21 @@ def plot_test(n, formats, tag=None):
     LOOK = _look()
     cores = np.array(list(data))
     p0 = cores[0]
-    times = {label: np.array([phase_times(r)[label] for r in data.values()]) for label, _ in PHASES}
+    n_repeats = {p: len(runs) for p, runs in data.items()}
+    # per phase: median / min / max over the repeats at each core count
+    stats = {
+        label: np.array([median_min_max([phase_times(r)[label] for r in runs]) for runs in data.values()])
+        for label, _ in PHASES
+    }
+    times = {label: stats[label][:, 0] for label, _ in PHASES}
+    if max(n_repeats.values()) > 1:
+        print(f"  test {n}: repeats per core count {sorted(set(n_repeats.values()))}; largest spreads (max-min)/median:")
+        spreads = sorted(
+            ((st[i, 2] - st[i, 1]) / st[i, 0], label, int(cores[i]))
+            for label, st in stats.items() for i in range(len(cores)) if st[i, 0] > 0.05
+        )[::-1][:3]
+        for sp, label, p in spreads:
+            print(f"     {sp * 100:5.1f}%  {label} @ {p} cores")
     name = TESTS[n]["figure"]
     suffix = TESTS[n]["suffix"]
 
@@ -179,9 +206,17 @@ def plot_test(n, formats, tag=None):
             valid = t > 0
             if not valid.any():
                 continue
-            y = t[valid][0] / t[valid] if kind == "scalability" else t[valid]
+            st = stats[label][valid]
+            if kind == "scalability":
+                # median T(p0) over the repeats at p, with the range of the repeats at p
+                y, lo, hi = t[valid][0] / st[:, 0], t[valid][0] / st[:, 2], t[valid][0] / st[:, 1]
+            else:
+                y, lo, hi = st[:, 0], st[:, 1], st[:, 2]
             look = dict(LOOK[label])
             ax.loglog(cores[valid], y, label=label, **style.style_series(**look))
+            if (hi > lo).any():
+                ax.errorbar(cores[valid], y, yerr=[y - lo, hi - y], fmt="none",
+                            ecolor=look.get("color", "black"), elinewidth=0.8, capsize=2)
         style.grid(ax, log_x=True, log_y=True)
         ax.set_xticks(cores, [str(c) for c in cores])
         ax.xaxis.set_minor_locator(mpl_null())
@@ -223,6 +258,8 @@ def main():
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--retry-failed", action="store_true")
     parser.add_argument("--timeout", type=float, default=3600, help="seconds per local run")
+    parser.add_argument("--repeats", type=int, default=1, help="prepare: number of repeated runs per test/core count (named testN_npP_rK)")
+    parser.add_argument("--repeat-start", type=int, default=1, help="prepare: first repeat index K (e.g. 2 to add repeats next to an existing testN_npP run)")
     add_cluster_args(parser)
     args = parser.parse_args()
 
