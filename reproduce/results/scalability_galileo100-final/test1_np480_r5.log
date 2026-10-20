@@ -1,0 +1,44 @@
+=== dealii-internodes: coupled_diffusion example ===
+Parameter file: /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability_galileo100-final/test1_np480_r5.prm
+Building master subproblem...
+Building slave subproblem...
+Coupling master and slave...
+Solving...
+Step 0: assembling system matrices
+Step 1: solving for u^(f)
+Step 2: computing interface residual chi
+Step 3: solving S*lambda = chi
+Step 4: solving for u^(lambda)
+GMRES converged in 6 iterations.
+Broken H1 error vs. exact solution: 0.147026
+
+
++-----------------------------------------------------------+------------+------------+
+| Total wallclock time elapsed since start                  |      10.5s |            |
+|                                                           |            |            |
+| Section                                       | no. calls |  wall time | % of total |
++-----------------------------------------------+-----------+------------+------------+
+| Schur preconditioner: apply                   |         7 |      2.91s |        28% |
+| interpolateResidual: solve M_gamma            |         7 |    0.0572s |      0.55% |
+| normal derivative                             |        14 |   0.00292s |         0% |
+| Assembly Preconditioner                       |         1 |     0.532s |       5.1% |
+| Setup destination points                      |         2 |     0.168s |       1.6% |
+| Step 0: assembly (master/slave)               |         1 |     0.393s |       3.8% |
+| Step 0: assembly (preconditioners)            |         1 |      0.51s |       4.9% |
+| Step 0: homogeneous-phase data update         |         2 |   0.00901s |         0% |
+| Step 1: u^(f) on master/slave                 |         1 |     0.496s |       4.7% |
+| Step 2: interface residual chi                |         1 |    0.0252s |      0.24% |
+| Step 3 (GMRES): Q21 interpolation             |         6 |     0.265s |       2.5% |
+| Step 3 (GMRES): residual computation          |         6 |     0.207s |         2% |
+| Step 3 (GMRES): subdomain solves              |         6 |      3.32s |        32% |
+| Step 3: interface solve (total)               |         1 |       7.4s |        71% |
+| Step 3a: initialize Schur preconditioner      |         1 |      0.15s |       1.4% |
+| Step 3b: solve S lambda = chi                 |         1 |      6.72s |        64% |
+| Step 4: u^(lambda) on master/slave            |         1 |     0.487s |       4.7% |
+| driver: solve()                               |         1 |       9.4s |        90% |
+| setup: interface-DoFs-last renumbering        |         2 |    0.0594s |      0.57% |
+| setup: subproblem (DoFs, interface, matrices) |         2 |      0.54s |       5.2% |
+| step_rhs: f_k - A_{k,Gamma_k} lambda_k        |        16 |   0.00661s |         0% |
+| subdomain linear solve                        |        16 |      4.28s |        41% |
++-----------------------------------------------+-----------+------------+------------+
+

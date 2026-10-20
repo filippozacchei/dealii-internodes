@@ -1,0 +1,46 @@
+{
+  "mode": "coupled",
+  "git_version": "1675c736b6",
+  "solver_options": {"phi_solver": "auto", "volume_amg": "lifex", "schur_prec": "cg"},
+  "geometry": "adjacent_boxes",
+  "n_mpi_ranks": 288,
+  "interpolation": "lagrange",
+  "rbf_radius_factor": 0,
+  "schur_preconditioner": true,
+  "gmres_iterations": 6,
+  "broken_H1_error": 0.147026010087,
+  "subdomains": {
+    "master": {"degree": 1, "n_dofs": 16974593, "n_interface_dofs": 66049, "n_cells": 16777216, "h_avg": 0.0135316469341, "rbf_radius": 0, "H1_error": 0.00992586378589, "interface_owned_min": 0, "interface_owned_max": 1089, "interface_ranks": 64, "phi_nnz": 0, "phi_solver": "-"},
+    "slave": {"degree": 1, "n_dofs": 2146689, "n_interface_dofs": 16641, "n_cells": 2097152, "h_avg": 0.0270632938683, "rbf_radius": 0, "H1_error": 0.146690575261, "interface_owned_min": 0, "interface_owned_max": 289, "interface_ranks": 64, "phi_nnz": 0, "phi_solver": "-"}
+  },
+  "cg_statistics": {
+    "interface_mass": {"solves": 7, "iterations": 212, "max_iterations": 33},
+    "schur_preconditioner": {"solves": 7, "iterations": 123, "max_iterations": 19},
+    "subdomain_n16908544": {"solves": 8, "iterations": 136, "max_iterations": 17},
+    "subdomain_n2130048": {"solves": 8, "iterations": 129, "max_iterations": 17}
+  },
+  "timings": {
+    "Schur preconditioner: apply": {"wall_max": 4.66005608, "calls": 7}, 
+    "interpolateResidual: solve M_gamma": {"wall_max": 0.045074435, "calls": 7}, 
+    "normal derivative": {"wall_max": 0.003059604, "calls": 14}, 
+    "Assembly Preconditioner": {"wall_max": 0.833544711, "calls": 1}, 
+    "Setup destination points": {"wall_max": 0.152380901, "calls": 2}, 
+    "Step 0: assembly (master/slave)": {"wall_max": 0.622932546, "calls": 1}, 
+    "Step 0: assembly (preconditioners)": {"wall_max": 0.552475788, "calls": 1}, 
+    "Step 0: homogeneous-phase data update": {"wall_max": 0.015082746, "calls": 2}, 
+    "Step 1: u^(f) on master/slave": {"wall_max": 0.751993921, "calls": 1}, 
+    "Step 2: interface residual chi": {"wall_max": 0.027339034, "calls": 1}, 
+    "Step 3 (GMRES): Q21 interpolation": {"wall_max": 0.222904385, "calls": 6}, 
+    "Step 3 (GMRES): residual computation": {"wall_max": 0.161068805, "calls": 6}, 
+    "Step 3 (GMRES): subdomain solves": {"wall_max": 4.62473273, "calls": 6}, 
+    "Step 3: interface solve (total)": {"wall_max": 10.7559273, "calls": 1}, 
+    "Step 3a: initialize Schur preconditioner": {"wall_max": 0.229592046, "calls": 1}, 
+    "Step 3b: solve S lambda = chi": {"wall_max": 9.68967896, "calls": 1}, 
+    "Step 4: u^(lambda) on master/slave": {"wall_max": 0.820197564, "calls": 1}, 
+    "driver: solve()": {"wall_max": 13.6141159, "calls": 1}, 
+    "setup: interface-DoFs-last renumbering": {"wall_max": 0.058790267, "calls": 2}, 
+    "setup: subproblem (DoFs, interface, matrices)": {"wall_max": 0.774345091, "calls": 2}, 
+    "step_rhs: f_k - A_{k,Gamma_k} lambda_k": {"wall_max": 0.010357896, "calls": 16}, 
+    "subdomain linear solve": {"wall_max": 6.1722331, "calls": 16}
+  }
+}
