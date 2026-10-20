@@ -1,0 +1,9 @@
+=== dealii-internodes: coupled_diffusion example ===
+Parameter file: /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/scalability/galileo100-phi-none/test5_np768.prm
+RBF radii: master 1.06889, slave 2.96696
+Building master subproblem...
+Assembling RBF sparsity pattern...
+Assembling RBF matrix Phi...
+[2026-10-20T18:51:23.060] error: *** STEP 22976845.0 ON r506c06n02 CANCELLED AT 2026-10-20T18:51:23 DUE TO TIME LIMIT ***
+[2026-10-20T18:51:23.064] error: *** JOB 22976845 ON r506c06n02 CANCELLED AT 2026-10-20T18:51:23 DUE TO TIME LIMIT ***
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
