@@ -96,7 +96,7 @@ them against your own runs):
 
 ## Scalability figures
 
-The configuration of each test is in `test1.prm` … `test5.prm` (Table 1), with
+The configuration of each test is in `test1.prm` … `test6.prm` (Table 1), with
 the refinement levels of the paper's scaling figures (`p1r8-p1r7`, `p2r7-p4r5`,
 …). Core counts default to the paper's $48, 96, 192, 240, 288, 384, 480, 768$.
 
@@ -153,9 +153,24 @@ The phases are those of the paper: assembly of the interpolation operators
 operators (`Step 0`), and Steps 1–4 of the algorithm, each as the maximum
 over the ranks of its accumulated wall time. The speed-up is
 $T(p_0)/T(p)$ with $p_0$ the smallest core count, and the ideal curve in the
-time plot is normalised to 1 s at $p_0$, as in the paper. Note that the
-algorithm assembles the subdomain matrices three times per solve, and the
-"Assembly Internal Operators" time is the sum over the three.
+time plot is normalised to 1 s at $p_0$, as in the paper. With repeated runs
+(`prepare --repeats 5`, jobs `test<n>_np<cores>_r<k>`) every point is the
+median over the repeats and the bars span min-max. `scalability_detail.py
+--tag <tag>` plots every timer separately (not for the paper).
+
+Results behind the paper's figures (all with the same code, commit 1675c73;
+each results file records its `git_version`):
+
+| Tag (`results/scalability_<tag>/`) | Tests | Notes |
+|---|---|---|
+| `galileo100-final` | 1-4 | 5 repeats per core count |
+| `galileo100-rf50` | 5, 6 | $r_f = 50$, 5 repeats per core count |
+| `galileo100-final` (Tests 5-6) | 5, 6 | $r_f = 10$, superseded: kept for the comparison |
+| `rf_study_galileo100` (results dir) | 5, 6 | radius study $r_f = 10, 20, 50, 100$ at 768 cores |
+
+Older tags (`galileo100`, `-v2` … `-v5`) are intermediate versions of the
+code, kept as a record; `galileo100` Tests 1-3 were produced by a stale
+binary and are not reproducible.
 
 Tests 4 and 5 (Geometry B) use deal.II's own `GridGenerator::hyper_shell`
 (hexahedral, a full concentric shell, matching lifex's own
@@ -264,7 +279,13 @@ used as the password, or an SSH key) and `git config user.name` /
 | `test2.prm` | 2 | A | 1 | 1 | RL-RBF | 1 |
 | `test3.prm` | 3 | A | 2 | 4 | RL-RBF | 1 |
 | `test4.prm` | 4 | B | 1 | 1 | RL-RBF | 1 |
-| `test5.prm` | 5 | B | 2 | 2 | RL-RBF | 10 |
+| `test5.prm` | 5 | B | 2 | 2 | RL-RBF | 50 |
+| `test6.prm` | 6 | B | 2 | 2 | RL-RBF | 50 |
+
+Test 6 is Test 5 refined once more on both sides (not in the original
+Table 1). Tests 5-6 use $r_f = 50$: with $r_f = 10$ (the original choice)
+the RBF transfer error saturates and the $H^1$ error converges with order
+0.5 instead of 2 (`results/rf_study_galileo100/`).
 
 They can also be run directly, `mpirun -np N ./coupled_diffusion reproduce/test1.prm`.
 Tests 1–3 reproduce the master DoF counts of Table 1 exactly ($257^3$).

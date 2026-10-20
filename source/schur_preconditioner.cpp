@@ -55,10 +55,12 @@ namespace internodes
     rhs.compress(VectorOperation::insert);
 
     // INTERNODES_SCHUR_PREC (experimental):
-    //   cg (default)  CG + AMG to a 1e-11 relative reduction (the original)
+    //   cg (default)  CG + AMG to a 1e-11 relative reduction (the original;
+    //                 used for all results of the paper)
     //   vcycle        a single AMG V-cycle: a fixed linear operator, so it
-    //                 stays valid with right-preconditioned GMRES; much
-    //                 cheaper per application, possibly more GMRES its.
+    //                 stays valid with right-preconditioned GMRES. Tested
+    //                 on Test 5 and not adopted: GMRES 11 -> 21 iterations,
+    //                 no net gain.
     static const std::string variant = [] {
       const char *const env = std::getenv("INTERNODES_SCHUR_PREC");
       return std::string(env ? env : "cg");

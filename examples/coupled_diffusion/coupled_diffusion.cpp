@@ -586,7 +586,7 @@ struct SubdomainReport
   types::global_dof_index  interface_owned_min = 0;
   types::global_dof_index  interface_owned_max = 0;
   unsigned int             interface_ranks     = 0;
-  types::global_dof_index  phi_nnz             = 0; // 0 for Lagrange
+  std::uint64_t            phi_nnz             = 0; // 0 for Lagrange
   std::string              phi_solver          = "-"; // strategy used ("-" for Lagrange)
 };
 

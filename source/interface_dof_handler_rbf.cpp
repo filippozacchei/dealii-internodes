@@ -87,7 +87,8 @@ namespace internodes
       }
     Phi.compress(VectorOperation::insert);
 
-    // Phi solve strategy (experimental, INTERNODES_PHI_SOLVER):
+    // Phi solve strategy (env INTERNODES_PHI_SOLVER; all results of the
+    // paper use the default, auto; the others are kept for comparison):
     //   none      CG, no preconditioner. Measured on the real
     //             Test 5 matrices (8 ranks): 113 s vs 345 s (master Phi) and
     //             74 s vs 172 s (slave Phi) per solve against amg -- ML AMG

@@ -112,7 +112,7 @@ Build on a filesystem with real disk quota (`$WORK`, `$SCRATCH`, `$CINECA_SCRATC
 cd $WORK   # or wherever you decided to build
 git clone https://github.com/dealii/candi.git
 cd candi
-./candi.sh --packages="p4est trilinos dealii" \
+./candi.sh --packages="p4est trilinos scalapack dealii" \
            --prefix=$WORK/dealii-candi \
            -j 8 \
            --yes
@@ -167,7 +167,7 @@ otherwise every retry of a later step pays for the full Trilinos build
 again:
 
 ```bash
-./candi.sh --packages="once:p4est once:trilinos dealii" \
+./candi.sh --packages="once:p4est once:trilinos once:scalapack dealii" \
            --prefix=$WORK/dealii-candi -j 8 --yes \
            --platform=deal.II-toolchain/platforms/supported/almalinux8.platform
 ```
@@ -241,10 +241,12 @@ env | grep -iE "_dir=|_lib|scalapack|parmetis|mumps" | sort
 unset PARMETIS_DIR SCALAPACK_DIR MUMPS_DIR PETSC_DIR SLEPC_DIR ADOLC_DIR ARPACK_DIR TRILINOS_DIR P4EST_DIR
 ```
 
-then rerun `./candi.sh ...` again. This port needs neither ParMETIS nor
-ScaLAPACK (p4est's own z-order partitioner is used, not METIS), so with
-these unset Trilinos should simply stop trying to enable them rather than
-needing them pointed anywhere.
+then rerun `./candi.sh ...` again. This port does not need ParMETIS (p4est's
+own z-order partitioner is used, not METIS), and Trilinos does not need
+ScaLAPACK: with these unset Trilinos stops trying to enable them. deal.II
+itself *does* use ScaLAPACK (the dense factorization of the RBF matrix,
+see the top-level README), but from candi's own `scalapack` package in
+`--packages`, not from a foreign environment.
 
 `unset` only fixes the current shell, though, and the leak comes back on
 every new login. **More robust:** comment out (don't delete, so it's a
@@ -271,7 +273,14 @@ left off.
 - `--prefix` is where everything gets installed; `-j` is the parallel build
   job count (match `--cpus-per-task` above). No `-j` given defaults to a
   small number, so pass it explicitly for a faster build.
-- This installs Trilinos and p4est along with deal.II — no separate METIS
+- This installs Trilinos, p4est and ScaLAPACK along with deal.II. Check that
+  deal.II picked ScaLAPACK up:
+  `grep DEAL_II_WITH_SCALAPACK $WORK/dealii-candi/deal.II-v*/include/deal.II/base/config.h`
+  must show `#define DEAL_II_WITH_SCALAPACK`. Without it the code still runs,
+  but large-radius RBF cases fall back to CG and are orders of magnitude
+  slower. If deal.II was already built without it, add `once:` to the
+  packages that are fine and rebuild only `scalapack dealii`.
+- No separate METIS
   build is needed (the port's `MeshHandler` uses p4est / the z-order
   partitioner, not METIS).
 - Expect on the order of 1-3 hours depending on the node and `-j`. It is
@@ -331,7 +340,7 @@ grep USE_DEAL_II_CMAKE_MPI_COMPILER candi.cfg    # confirm it now says OFF
 
 rm -rf $WORK/dealii-candi/tmp/build/deal.II-v9.8.0
 
-./candi.sh --packages="once:p4est once:trilinos dealii" \
+./candi.sh --packages="once:p4est once:trilinos once:scalapack dealii" \
            --prefix=$WORK/dealii-candi -j 8 --yes \
            --platform=deal.II-toolchain/platforms/supported/almalinux8.platform
 ```
@@ -417,6 +426,9 @@ for this check):
   If step 2 needed `cluster_env.sh`, add
   `$'\n'"source reproduce/cluster_env.sh"` too, so the batch job uses the
   same compiler the executable was actually built and linked with.
+- Put `export MKL_NUM_THREADS=1 OMP_NUM_THREADS=1` in `--modules` too: one
+  BLAS thread per MPI rank, otherwise the dense (ScaLAPACK) factorization
+  oversubscribes the cores.
 - `--launcher` (default `srun`) is whatever your site uses to start an MPI
   program inside a batch script (`srun`, or `mpirun` on some systems).
 - If the candi build fails at the Trilinos step (needed for the AMG/ML

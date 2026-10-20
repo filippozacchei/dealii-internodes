@@ -57,8 +57,10 @@ TESTS = {
     2: {"figure": "RBF_Cubi_p1r8-p1r7_r=1_galileo", "suffix": ""},
     3: {"figure": "RBF_Cubi_p2r7-p4r5_r=1_galileo", "suffix": ""},
     4: {"figure": "RBF_Shell_p1r7-p1r6_r=05_galileo", "suffix": ""},
-    5: {"figure": "RBF_Shell_p2r6-p2r5_r=10_galileo", "suffix": ""},
-    6: {"figure": "RBF_Shell_p2r7-p2r6_r=10_galileo", "suffix": ""},  # Test 5 refined once more; not in the paper's Table 1
+    # Tests 5-6 at r_f = 50 since tag galileo100-rf50 (r_f = 10 is in the
+    # stationary regime: H1 order 0.5 instead of 2, see rf_study_galileo100)
+    5: {"figure": "RBF_Shell_p2r6-p2r5_r=50_galileo", "suffix": ""},
+    6: {"figure": "RBF_Shell_p2r7-p2r6_r=50_galileo", "suffix": ""},  # Test 5 refined once more; not in the paper's Table 1
 }
 
 # (label, timer sections of the results file that are added up)

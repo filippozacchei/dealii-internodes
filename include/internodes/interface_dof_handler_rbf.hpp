@@ -81,7 +81,8 @@ namespace internodes
 
     /// Number of nonzeros of the RBF matrix `Phi` (a diagnostic: its density
     /// relative to n_interface^2 is what drives the cost of the Phi solves).
-    types::global_dof_index
+    /// 64-bit: a (nearly) dense Phi at large radius exceeds 2^32 nonzeros.
+    std::uint64_t
     phi_n_nonzero_elements() const
     {
       return Phi.n_nonzero_elements();
@@ -115,29 +116,12 @@ namespace internodes
     TrilinosWrappers::SparseMatrix  Phi;
     TrilinosWrappers::MPI::Vector   scaling_factors;
 
-    /// CG preconditioner for `Phi`. Back to AMG -- the original choice --
-    /// after two cluster-only failures of sparse alternatives tried at
-    /// Test 5's r_f=10 (see git history for both): an *exact* factorization
-    /// (Amesos) blew up in fill-in and didn't finish in 10+ minutes; an
-    /// incomplete one (Ifpack ILU-T) crashed outright
-    /// ("Ifpack_LocalFilter.cpp" / "Ifpack_ILUT.cpp", error -1). Root cause
-    /// for both, found only after the second failure: at r_f=10, the
-    /// *slave* handler's support radius (1.1855, logged as "RBF radii:
-    /// ... slave ...") is comparable to the whole interface sphere's
-    /// diameter (radius 0.75, so diameter 1.5) -- every point's support
-    /// ball covers nearly every other point, so Phi there is not sparse
-    /// with a wide bandwidth, it is close to fully *dense*. Every
-    /// technique above assumes meaningful sparsity (bounded fill-in,
-    /// block-local structure); none of that holds here, which is almost
-    /// certainly why both broke specifically on Test 5 and nowhere else.
-    /// AMG+CG is slow in this regime (thousands of iterations) but it is
-    /// the one approach actually validated at this scale, so it stays
-    /// until a fix designed for the genuinely-dense case (e.g. a real
-    /// distributed dense factorization, not a sparse one) is validated
-    /// off the critical path, not iterated live against cluster jobs.
-    TrilinosWrappers::PreconditionAMG preconditioner_Phi; // unused, kept for the doc above
-
-    /// Phi solve strategy actually in use (see the constructor).
+    /// Phi solve strategy actually in use (see the constructor). At large
+    /// radius Phi is close to dense (Test 5 at r_f=10: master 8%, slave
+    /// 63%), so sparse factorizations fail (Amesos-KLU: fill-in; Ifpack
+    /// ILU-T: crashed on the cluster) and CG needs thousands of iterations
+    /// per solve; the default "auto" therefore uses a distributed dense
+    /// factorization (ScaLAPACK) whenever Phi is at least 1% dense.
     std::string phi_solver;
     /// CG preconditioner for Phi (amg / amg_sub / none strategies).
     std::unique_ptr<TrilinosWrappers::PreconditionBase> phi_preconditioner;

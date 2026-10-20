@@ -29,16 +29,26 @@ instance of this — a good starting point for a new PDE model or driver.
   9.8.0), configured with MPI, **Trilinos** (`TrilinosWrappers` linear algebra
   and the ML/MueLu algebraic multigrid) and **p4est** (hexahedral meshes).
   METIS is *not* required.
+- **ScaLAPACK** (optional, strongly recommended for large RBF radii): with
+  it, a dense RBF matrix Φ is factored once in parallel and every later Φ
+  solve is a dense mat-vec; without it, Φ is solved with CG, which takes
+  thousands of iterations per solve when Φ is dense (see "Performance
+  notes").
 
 The easiest way to get a correctly configured `deal.II` is
 [`candi`](https://github.com/dealii/candi), which builds `deal.II` together
-with Trilinos and p4est from source:
+with Trilinos, p4est and ScaLAPACK from source:
 
 ```bash
 git clone https://github.com/dealii/candi.git
 cd candi
-./candi.sh --packages="p4est trilinos dealii"
+./candi.sh --packages="p4est trilinos scalapack dealii"
 ```
+
+With a threaded BLAS (MKL, OpenBLAS, Accelerate), run with
+`MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1`: one
+thread per MPI rank, otherwise the dense factorization oversubscribes the
+cores.
 
 On a cluster with a module system, load (or build) `deal.II` with the same
 components and set `DEAL_II_DIR` as below.
@@ -152,8 +162,8 @@ Geometry-B (two concentric hyper-shells, hexahedral, RL-RBF, `RBF radius factor 
 `reproduce/` contains parameter files for the configurations of the paper's
 accuracy and strong-scaling studies (Table 1). **These are not meant to be
 run by a reviewer or casual user**: the scalability configurations need
-distributed-memory HPC resources (the paper's runs used up to 500+ MPI
-processes and ~10 million degrees of freedom). See `reproduce/README.md` for
+distributed-memory HPC resources (the runs used 48 to 768 MPI processes
+and up to ~19 million degrees of freedom). See `reproduce/README.md` for
 what each configuration requires and how it maps to the paper.
 
 What differs from the paper's setup, so figures will not match to the last
@@ -215,101 +225,55 @@ use.
   substitute for testing on the MPI implementation reviewers or an HPC
   cluster will actually use.
 
-## Improving scalability
+## Performance notes
 
-Three distinct bottlenecks found while auditing the code against the paper's
-scalability results (none of these are correctness issues — see "Notes on
-the port" above for the from-scratch code audit). The first two, below, are
-now **fixed** (2026-10-18); the third (Lagrange) is still open. Numbers are
-from the pre-fix code and are kept as the record of what motivated each
-change — ranked by measured impact, not by where they sit in the code.
+What determines the cost and the strong scaling, as measured on CINECA
+Galileo100 (48 to 768 MPI processes; results in
+`reproduce/results/scalability_galileo100-final/` and
+`scalability_galileo100-rf50/`):
 
-**By far the dominant one, confirmed with real timings** (`test5_np48.json`
-/ `test5_np768.json`, shell geometry, $\mathbb P_2$, RBF radius factor 10 —
-the worst-conditioning case in the scalability suite):
-
-- **Φ's CG iteration count cost one global `allreduce` per iteration, and
-  dominated every phase that calls `interpolate()`, not just the GMRES
-  loop.** `interpolate: solve Phi` alone was 1389s of the 1440s total
-  `driver: solve()` wall-clock at 48 ranks (**96%**), and 512s of 524s at 768
-  ranks (**98%** — only a 2.7× speedup for 16× the ranks, ≈17% efficiency).
-  This one call accounted for essentially the entire scalability picture of
-  this config. Three different phases paid for it, because they all end up
-  calling `interpolate()` against the same Φ:
-  - `setup: RBF operators (Phi, AMG, scaling)` (the "Assembly Interpolation
-    Operators" series in the plots) includes the one-time CG+AMG solve of
-    Φ·scaling=1 at construction — 192s of its 192s/55s totals (np=48/768) is
-    plausibly almost entirely this, by elimination (matrix assembly and AMG
-    setup are comparatively cheap).
-  - `Step 2: interface residual chi` is, in its entirety, one more
-    `interpolate()` call (the Q12 residual transfer) — 33s/8.6s (np=48/768),
-    same mechanism, same matrix.
-  - `Step 3 (GMRES): Q21/Q12 interpolation`, inside the main loop, one or two
-    calls per outer iteration.
-
-  **Fixed, without changing the RL-RBF method or its formulas**: Φ is fixed
-  for the lifetime of a solve, and only the right-hand side changes between
-  `interpolate()` calls — so the ~dozens of CG+AMG solves against the *same*
-  Φ across setup, Step 2 and Step 3 in a single run were exactly the
-  situation a one-time **direct factorization** is suited to. Φ is symmetric
-  positive definite, and is now factored once with
-  `TrilinosWrappers::SolverDirect` (Amesos-KLU, already linked via Trilinos
-  — previously used only as the AMG coarse solver), reused (no refactor)
-  by every subsequent solve in all three phases: a cheap back-substitution,
-  no outer iterations, no per-iteration `allreduce`. This also sidesteps the
-  actual problem CG+AMG had here — a direct factorization doesn't degrade
-  the way iterative methods do when the matrix is near-dense/ill-conditioned
-  — and Φ is interface-sized (one dimension lower than the volume problem),
-  so the one-time fill-in/memory cost is bounded by the interface size, not
-  the full 3-D problem. Verified against the pre-fix code on 1/2/4-rank
-  laptop smoke cases (RBF at $r_f=1$ and $r_f=10$, and Lagrange): identical
-  GMRES iteration counts and H1 errors. **Not yet re-run at Table-1 scale on
-  the cluster** — the numbers above are not yet confirmed to actually
-  improve at that scale, only expected to from the mechanism.
-
-**Secondary — real, but a few percent of wall-clock in the same measurement**
-(`Setup destination points`: 35s/7s of 1440s/524s, np=48/768 — already
-~4.9× faster at 16× the ranks, i.e. scaling reasonably, just not ideally):
-
-- **`compute_map_union()` broadcast the destination-point map to every
-  rank, not just the ranks that need it.** `setup_destination_points()`, in
-  both `interface_dof_handler.cpp` and `interface_dof_handler_rbf.cpp`,
-  called `compute_map_union()` (`utilities.hpp`), which does an `all_gather`
-  and merges every rank's local contribution onto every rank — by design
-  ("fully-populated map on every process", per its own doc comment).
-  `interpolate()` afterward only ever looks up locally-owned indices
-  (`dst.locally_owned_elements().is_element(i)`), so every rank paid to
-  receive, store and merge entries it never reads. The communication volume
-  and the serial merge loop both scale with the *total* problem size, not
-  the local partition — a weak-scaling liability that gets worse as rank
-  count grows, though the measurement above shows it wasn't yet the
-  dominant cost at the rank counts tested.
-
-  **Fixed, for the RBF path**: unlike the Lagrange case (next item), an RBF
-  destination point's weights depend only on the (already globally
-  replicated) source support points and the R-tree over them, not on which
-  rank's cell contains it — so no gather is needed at all.
-  `setup_destination_points()`/`interpolate()` now take the destination
-  `IndexSet` directly, and each rank computes and evaluates only the
-  entries it owns, with no communication. `interpolate()` also evaluates
-  the sparse weights directly (a dot product) instead of scattering them
-  into a dense O(interface-size) vector first. Verified the same way as the
-  Φ fix above (identical results on laptop smoke cases); not yet re-run at
-  Table-1 scale. The Lagrange path is unchanged: it still needs to gather
-  (see below), and now only discards the non-owned part of the result
-  afterward, to not hold it in memory.
-- **The Lagrange `setup_destination_points()` has no spatial acceleration —
-  still open.** It loops over every locally-owned interface cell and tests
-  every *global* destination point against it
-  (`cell->point_inside(points[i])`, `interface_dof_handler.cpp:183-221`) —
-  brute-force, O(local cells × global points). The RBF path already builds
-  an `RTreeHandler` for the equivalent query; the Lagrange path doesn't.
-  Same weak-scaling shape as above (per-rank cost grows with total problem
-  size), just in the search step instead of the communication step. Affects
-  every conforming/p1p1/p2p3 test, since those use the Lagrange interface
-  handler — not fixed here since Test 1 (the only scalability test using
-  it) already scales close to ideally; worth revisiting if a future
-  Lagrange test doesn't. Fix: reuse `RTreeHandler` here too.
+- **The RBF matrix Φ.** Every interpolation solves with Φ, the RL-RBF
+  matrix of the source interface (~2 solves per GMRES iteration). For small
+  support radii Φ is very sparse and CG solves it in a few iterations. For
+  large radii (r_f = 10 or more on the shell tests) Φ is close to dense:
+  CG then needs thousands of iterations per solve (Test 5, r_f = 10:
+  ~9,300 / ~6,800 per master / slave solve, 591 s of Φ solves at 48
+  processes, 278 s at 768), and sparse factorizations fail (Amesos-KLU:
+  fill-in; Ifpack ILU-T: crashed). The default strategy (`auto`) therefore
+  factors Φ once with a distributed dense Cholesky decomposition (ScaLAPACK)
+  whenever it is at least 1% dense, and applies Φ⁻¹ as a dense mat-vec: the
+  Φ solves of the same Test 5 take 0.4 s in total, after a one-time setup
+  of 28 s (48 processes) / 4.5 s (768). The setup is O(n³) in the number
+  n of interface DoFs of a subdomain (about 30 minutes at 48 processes for
+  n ≈ 10⁵), and must be redone if the interface moves.
+- **The RBF radius.** With the radius tied to the mesh size (r = r_f · h)
+  and r_f fixed, the support shrinks under refinement and the transfer
+  error saturates: on the shells with $\mathbb{P}_2$, r_f = 10 converges with
+  order 0.5 instead of 2. A support comparable to the interface size
+  restores the optimal order (r_f = 50: order 2.3, errors 13-46× smaller
+  than with r_f = 10, see `reproduce/results/rf_study_galileo100/`). With the
+  dense factorization this costs nothing in the solve phase (same GMRES
+  iterations, same Step 3 time); only the setup grows moderately.
+- **Strong scaling.** The interface GMRES and all inner CG iteration counts
+  are independent of the number of processes. Step 3 (the interface solve)
+  scales nearly ideally up to 288 processes and reaches 9-10× at 768
+  processes for the large tests; its cost is ~80% algebraic-multigrid CG
+  solves (subdomain solves and Schur preconditioner), whose efficiency drops
+  below ~25k DoFs per process. Small problems saturate earlier (Test 5,
+  1.8M DoFs: 5× at 768 processes; the same configuration refined once,
+  14.3M DoFs: 10×). The master and slave solves run one after the other on
+  all processes; solving them concurrently on separate groups of processes
+  is the main remaining improvement.
+- **Run-time switches** (environment variables, for experiments only; all
+  results use the defaults): `INTERNODES_PHI_SOLVER` = `auto` (default) |
+  `scalapack` | `none` (plain CG) | `amg` | `amg_sub` | `dense`;
+  `INTERNODES_PHI_DENSE_MIN_DENSITY` (default 0.01); `INTERNODES_PHI_RCOND=1`
+  prints the condition-number estimate of the factored Φ;
+  `INTERNODES_VOLUME_AMG` = `lifex` (default) | `ho_agg` | `ho` | `ho_w`;
+  `INTERNODES_SCHUR_PREC` = `cg` (default) | `vcycle`;
+  `INTERNODES_EXIT_AFTER_SETUP=1` stops after the setup. The alternatives
+  were measured and not adopted; the reasons are in the comments next to
+  each switch.
 
 ## Repository layout
 
@@ -327,13 +291,12 @@ docs/                 Architecture figure (source + rendered)
 
 The hexahedral and tetrahedral code paths, serial and parallel, are validated
 as described above, on both a local machine (deal.II 9.7.0/9.8.0, OpenMPI)
-and an HPC cluster (CINECA Galileo100, deal.II 9.8.0, Intel MPI). The
-HPC-scale configurations in `reproduce/` have been run at full size on
-Galileo100 (Table 1's Tests 1–5, all 8 core counts, both the accuracy and
-scalability studies; see `reproduce/results/*_galileo100/`), except for the
-scalability fixes in "Improving scalability" above, which have not yet been
-re-run at that scale. Only the diffusion–reaction model is provided; other
-PDEs need a new `SubProblemBase` subclass.
+and an HPC cluster (CINECA Galileo100, deal.II 9.8.0 with ScaLAPACK, Intel
+MPI). All configurations in `reproduce/` have been run at full size on
+Galileo100 with this code (5 repeats per core count for the scalability
+study; see `reproduce/README.md` for which results feed which figure). Only
+the diffusion–reaction model is provided; other PDEs need a new
+`SubProblemBase` subclass.
 
 ## License
 
