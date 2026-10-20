@@ -229,8 +229,7 @@ use.
 
 What determines the cost and the strong scaling, as measured on CINECA
 Galileo100 (48 to 768 MPI processes; results in
-`reproduce/results/scalability_galileo100-final/` and
-`scalability_galileo100-rf50/`):
+`reproduce/results/scalability/`):
 
 - **The RBF matrix Φ.** Every interpolation solves with Φ, the RL-RBF
   matrix of the source interface (~2 solves per GMRES iteration). For small
@@ -251,7 +250,7 @@ Galileo100 (48 to 768 MPI processes; results in
   error saturates: on the shells with $\mathbb{P}_2$, r_f = 10 converges with
   order 0.5 instead of 2. A support comparable to the interface size
   restores the optimal order (r_f = 50: order 2.3, errors 13-46× smaller
-  than with r_f = 10, see `reproduce/results/rf_study_galileo100/`). With the
+  than with r_f = 10, see `reproduce/results/scalability/radius_study/`). With the
   dense factorization this costs nothing in the solve phase (same GMRES
   iterations, same Step 3 time); only the setup grows moderately.
 - **Strong scaling.** The interface GMRES and all inner CG iteration counts

@@ -10,7 +10,7 @@ On a cluster (SLURM), one job per configuration instead of one long serial
 
     python accuracy.py prepare --account <account> --partition <partition> \\
         [--modules "module load ..."] [--np 48] [--max-level 6] [--figures all]
-    bash results/accuracy/submit_all.sh          # afterwards
+    bash results/accuracy/<tag>/submit_all.sh    # afterwards
     python accuracy.py plot
 
 `run` executes the coupled_diffusion example for every configuration behind
@@ -55,7 +55,9 @@ except ImportError:
 from lib import ROOT, add_cluster_args, box_case, job_script, run_case, write_submit_all  # noqa: E402
 
 def _results_dir(tag=None):
-    return ROOT / "results" / (f"accuracy_{tag}" if tag else "accuracy")
+    """results/accuracy/<tag>; untagged (laptop) runs go to local/, which git
+    ignores."""
+    return ROOT / "results" / "accuracy" / (tag or "local")
 
 
 RESULTS = _results_dir()  # set from --tag in main()
@@ -454,7 +456,7 @@ def main():
     parser.add_argument("--retry-failed", action="store_true", help="rerun cases that failed or timed out before")
     parser.add_argument("--formats", default="pdf,png", help="output formats (default pdf,png; the paper uses eps)")
     parser.add_argument("--paper-labels", action="store_true", help="label the x axis of the non-conforming figures h_2, as the paper does")
-    parser.add_argument("--tag", default=None, help="keep results in results/accuracy_<tag> instead of results/accuracy (e.g. --tag galileo100 for runs to be committed; see the README)")
+    parser.add_argument("--tag", default=None, help="keep results in results/accuracy/<tag> instead of results/accuracy/local (e.g. --tag galileo100 for runs to be committed; only local/ is ignored by git)")
     add_cluster_args(parser)
     args = parser.parse_args()
 

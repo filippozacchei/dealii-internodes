@@ -1,0 +1,22 @@
+#!/bin/bash
+cd /g100_work/uBS26_MatGer/dealii-internodes/reproduce
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy/galileo100/hyb_hexmaster_p1_k2.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy/galileo100/hyb_hexmaster_p2_k2.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy/galileo100/hyb_tetmaster_p1_k2.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy/galileo100/hyb_tetmaster_p2_k2.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy/galileo100/hyb_hexmaster_p1_k3.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy/galileo100/hyb_hexmaster_p2_k3.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy/galileo100/hyb_tetmaster_p1_k3.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy/galileo100/hyb_tetmaster_p2_k3.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy/galileo100/hyb_hexmaster_p1_k4.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy/galileo100/hyb_hexmaster_p2_k4.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy/galileo100/hyb_tetmaster_p1_k4.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy/galileo100/hyb_tetmaster_p2_k4.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy/galileo100/hyb_hexmaster_p1_k5.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy/galileo100/hyb_hexmaster_p2_k5.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy/galileo100/hyb_tetmaster_p1_k5.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy/galileo100/hyb_tetmaster_p2_k5.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy/galileo100/hyb_hexmaster_p1_k6.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy/galileo100/hyb_hexmaster_p2_k6.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy/galileo100/hyb_tetmaster_p1_k6.sh
+sbatch /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy/galileo100/hyb_tetmaster_p2_k6.sh

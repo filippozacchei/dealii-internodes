@@ -3,9 +3,9 @@
 only the six phases of the paper's figures, plus the inner-solve iteration
 counts. For inspection, not for the paper.
 
-    python scalability_detail.py --tag galileo100-final [--tests 1,2,3,4,5]
+    python scalability_detail.py --tag galileo100 [--tests 1,2,3,4,5]
 
-For each test writes, to figures/scalability_detail_<tag>/:
+For each test writes, to figures/scalability/<tag>/detail/:
     testN_time.png      wall time (max over ranks) per timer, by group
     testN_speedup.png   speed-up T(p0)/T(p) per timer, by group
     testN_iterations.png  CG iterations per solve, by kind of inner solve
@@ -184,7 +184,7 @@ def main():
     parser.add_argument("--tag", required=True)
     parser.add_argument("--tests", default="1,2,3,4,5")
     args = parser.parse_args()
-    outdir = ROOT / "figures" / f"scalability_detail_{args.tag}"
+    outdir = ROOT / "figures" / "scalability" / args.tag / "detail"
     outdir.mkdir(parents=True, exist_ok=True)
     for n in map(int, args.tests.split(",")):
         data = load_test(n, args.tag)

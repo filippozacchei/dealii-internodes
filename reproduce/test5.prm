@@ -1,20 +1,23 @@
-# Paper Table 1, Test 5: Geometry-B, p1=p2=2, RL-RBF, r_f=10 (the "large
-# support radius" regime the paper identifies as the scalability bottleneck
-# -- see resolutionAlgorithm.tex/NumericalResults §4.3's discussion of
-# Step 2/Step 3 cost).
-# Radius r = r_f * h_avg of each subdomain's own mesh ("RBF radius factor").
-# Refinement levels found by matching the slave's DoF count: refinement 4
-# gives exactly 202,818 DoFs, i.e. Table 1's slave target (~2.02e5); master
-# at one level finer (5, the same master = slave + 1 convention as Tests
-# 1-3) extrapolates to ~1.62e6, close to Table 1's master target (~1.59e6).
-
+# Test 5: Geometry-B (concentric hyper-shells, curved non-matching
+# interface), p1 = p2 = 2, RL-RBF with radius factor r_f = 50.
+# Shell refinement 6/5: master 12,681,474 DoFs (98,306 on the interface),
+# slave 1,597,570 (24,578), as many DoFs as Test 4, so the two differ only
+# in the degree and the radius. (The paper's original Test 5 was one level
+# coarser, 1.8e6 DoFs in total: too few per process for strong scaling to
+# 768 processes.)
+# Radius r = r_f * h_avg of each subdomain's own mesh: 1.07 (master) and
+# 2.97 (slave) against an interface diameter of 1.5. r_f = 10, the original
+# choice, is in the stationary regime of RBF interpolation (support
+# shrinking with h): H1 convergence of order 0.5 instead of 2; r_f = 50
+# gives order 2.3 (results/scalability/radius_study/). Phi is then dense
+# (master ~50%, slave 100%) and is factored once with ScaLAPACK.
 subsection Geometry
   set Type                     = hyper_shells
   set Inner radius             = 0.5
   set Interface radius         = 0.75
   set Outer radius             = 1.0
-  set Shell refinement master  = 5
-  set Shell refinement slave   = 4
+  set Shell refinement master  = 6
+  set Shell refinement slave   = 5
 end
 
 subsection Discretization

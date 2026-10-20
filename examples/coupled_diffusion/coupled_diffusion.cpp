@@ -645,6 +645,16 @@ timings_json()
   return out.str();
 }
 
+/// Wall clock of the whole run, started in main() right after MPI is
+/// initialized: everything (mesh, setup, solve, error evaluation) up to the
+/// writing of the results file, i.e. what the timed phases leave out too.
+Timer &
+run_timer()
+{
+  static Timer timer;
+  return timer;
+}
+
 void
 write_results(const Parameters                                              &parameters,
               const std::vector<std::pair<std::string, SubdomainReport>>    &subdomains,
@@ -655,6 +665,8 @@ write_results(const Parameters                                              &par
     return;
 
   const std::string timings = timings_json(); // collective: call on all ranks
+  const double      total_wall =
+    Utilities::MPI::max(run_timer().wall_time(), mpi_comm); // collective
   if (Utilities::MPI::this_mpi_process(mpi_comm) != 0)
     return;
 
@@ -690,6 +702,7 @@ write_results(const Parameters                                              &par
       << (parameters.use_schur_preconditioner ? "true" : "false") << ",\n";
   out << "  \"gmres_iterations\": " << n_iterations << ",\n";
   out << "  \"broken_H1_error\": " << total_error << ",\n";
+  out << "  \"total_wall\": " << total_wall << ",\n";
   out << "  \"subdomains\": {";
   unsigned int i = 0;
   for (const auto &[name, r] : subdomains)
@@ -891,6 +904,7 @@ main(int argc, char *argv[])
   try
     {
       Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
+      run_timer().restart();
 
       const std::string prm_file = (argc > 1) ? argv[1] : "coupled_diffusion.prm";
 

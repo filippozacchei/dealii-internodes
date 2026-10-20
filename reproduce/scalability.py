@@ -4,11 +4,11 @@
 On a cluster (SLURM):
     python scalability.py prepare --account <account> --partition <partition> \\
         [--modules "module load ..."] [--tests 1,2,3,4,5] [--cores 48,96,192,240,288,384,480,768]
-    bash results/scalability/submit_all.sh          # afterwards
+    bash results/scalability/<tag>/submit_all.sh    # afterwards
     python scalability.py plot
 
 `prepare` writes, for every test and core count, a parameter file and a batch
-script (results/scalability/testN_npP.{prm,sh}); each job writes
+script (results/scalability/<tag>/testN_npP.{prm,sh}); each job writes
 testN_npP.json. Nothing is run by `prepare` itself.
 
 On a laptop, a scaled-down version of the same pipeline (every refinement
@@ -27,6 +27,7 @@ The phases plotted are those of the paper:
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -43,11 +44,13 @@ except ImportError:
 from lib import ROOT, add_cluster_args, job_script, read_prm, run_case, write_submit_all  # noqa: E402
 
 def _results_dir(tag=None):
-    return ROOT / "results" / (f"scalability_{tag}" if tag else "scalability")
+    """results/scalability/<tag>; untagged (laptop) runs go to local/, which
+    git ignores."""
+    return ROOT / "results" / "scalability" / (tag or "local")
 
 
-RESULTS = _results_dir()
-FIGURES = ROOT / "figures" / "scalability"
+def _figures_dir(tag=None):
+    return ROOT / "figures" / "scalability" / (tag or "local")
 
 CORES = (48, 96, 192, 240, 288, 384, 480, 768)  # the paper's counts; p0 = 48
 
@@ -57,10 +60,9 @@ TESTS = {
     2: {"figure": "RBF_Cubi_p1r8-p1r7_r=1_galileo", "suffix": ""},
     3: {"figure": "RBF_Cubi_p2r7-p4r5_r=1_galileo", "suffix": ""},
     4: {"figure": "RBF_Shell_p1r7-p1r6_r=05_galileo", "suffix": ""},
-    # Tests 5-6 at r_f = 50 since tag galileo100-rf50 (r_f = 10 is in the
-    # stationary regime: H1 order 0.5 instead of 2, see rf_study_galileo100)
-    5: {"figure": "RBF_Shell_p2r6-p2r5_r=50_galileo", "suffix": ""},
-    6: {"figure": "RBF_Shell_p2r7-p2r6_r=50_galileo", "suffix": ""},  # Test 5 refined once more; not in the paper's Table 1
+    # Test 5 at r_f = 50 (r_f = 10 is in the stationary regime: H1 order 0.5
+    # instead of 2, see results/scalability/radius_study/)
+    5: {"figure": "RBF_Shell_p2r7-p2r6_r=50_galileo", "suffix": ""},
 }
 
 # (label, timer sections of the results file that are added up)
@@ -94,6 +96,7 @@ def _look():
         "Step 2": dict(color=style.ORANGE, marker="^", linestyle=":"),
         "Step 3": dict(color=style.GREEN, marker="s", linestyle="-."),
         "Step 4": dict(color=style.PURPLE, marker="D", linestyle="--"),
+        "Total": dict(color=style.GRAY, marker="*", linestyle="-", linewidth=2.2),
     }
 
 
@@ -158,7 +161,9 @@ def load_test(n, tag=None):
     found = {}
     for path in _results_dir(tag).glob(f"test{n}_np*.json"):
         p = int(path.stem.split("_np")[1].split("_r")[0])
-        found.setdefault(p, []).append(json.loads(path.read_text()))
+        result = json.loads(path.read_text())
+        result["_path"] = str(path)
+        found.setdefault(p, []).append(result)
     versions = {r.get("git_version", "unknown") for runs in found.values() for r in runs}
     if len(versions) > 1:
         sys.exit(f"test {n} ({tag}): results from different commits {sorted(versions)}; not mixing them")
@@ -170,9 +175,30 @@ def median_min_max(values):
     return np.median(v), v[0], v[-1]
 
 
+def total_wall(result):
+    """Wall time of the whole run: `total_wall` of the results file, or for
+    results written before it existed the TimerOutput total in the log."""
+    if "total_wall" in result:
+        return result["total_wall"]
+    log = Path(result["_path"]).with_suffix(".log")
+    if log.exists():
+        m = re.search(r"Total wallclock time elapsed since start\s*\|\s*([\d.e+]+)s", log.read_text())
+        if m:
+            return float(m.group(1))
+    return 0.0
+
+
 def phase_times(result):
     t = result["timings"]
-    return {label: sum(t.get(s, {}).get("wall_max", 0.0) for s in sections) for label, sections in PHASES}
+    times = {label: sum(t.get(s, {}).get("wall_max", 0.0) for s in sections) for label, sections in PHASES}
+    times["Total"] = total_wall(result)
+    return times
+
+
+# Plotted series: the paper's phases plus the whole run, so that nothing
+# outside the phases (mesh and DoF setup, AMG setup, error evaluation) can
+# hide behind them.
+SERIES = [label for label, _ in PHASES] + ["Total"]
 
 
 def plot_test(n, formats, tag=None):
@@ -186,9 +212,9 @@ def plot_test(n, formats, tag=None):
     # per phase: median / min / max over the repeats at each core count
     stats = {
         label: np.array([median_min_max([phase_times(r)[label] for r in runs]) for runs in data.values()])
-        for label, _ in PHASES
+        for label in SERIES
     }
-    times = {label: stats[label][:, 0] for label, _ in PHASES}
+    times = {label: stats[label][:, 0] for label in SERIES}
     if max(n_repeats.values()) > 1:
         print(f"  test {n}: repeats per core count {sorted(set(n_repeats.values()))}; largest spreads (max-min)/median:")
         spreads = sorted(
@@ -204,7 +230,7 @@ def plot_test(n, formats, tag=None):
         fig, ax = style.new_axes(style.SCALABILITY_FIGSIZE)
         ideal = cores / p0 if kind == "scalability" else p0 / cores
         ax.loglog(cores, ideal, label="Ideal", **LOOK["Ideal"])
-        for label, _ in PHASES:
+        for label in SERIES:
             t = times[label]
             valid = t > 0
             if not valid.any():
@@ -234,7 +260,7 @@ def plot_test(n, formats, tag=None):
             ax.set_ylabel("Time (s)")
             ax.legend(loc="lower left")
             out = f"{name}_total{suffix}"
-        style.save(fig, out, FIGURES, formats)
+        style.save(fig, out, _figures_dir(tag), formats)
 
 
 def mpl_null():
@@ -255,7 +281,7 @@ def main():
     parser.add_argument("--tests", default="1,2,3,4,5")
     parser.add_argument("--cores", default=",".join(map(str, CORES)))
     parser.add_argument("--levels-down", type=int, default=0, help="lower every refinement level by this (0 = the paper's)")
-    parser.add_argument("--tag", default=None, help="keep results in results/scalability_<tag> instead of results/scalability (e.g. --tag smoke), so a smoke test cannot collide with or overwrite the real sweep")
+    parser.add_argument("--tag", default=None, help="keep results in results/scalability/<tag> instead of results/scalability/local (e.g. --tag galileo100); only local/ is ignored by git")
     parser.add_argument("--exe", help="path of the coupled_diffusion executable")
     parser.add_argument("--formats", default="png,pdf")
     parser.add_argument("--force", action="store_true")

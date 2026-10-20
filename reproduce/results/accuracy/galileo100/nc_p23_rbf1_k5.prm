@@ -1,0 +1,28 @@
+subsection Geometry
+  set Type = adjacent_boxes
+  set Subdivisions master = 1,1,1
+  set Subdivisions slave = 1,1,1
+  set Global refinement master = 5
+  set Global refinement slave = 4
+  set Cell type master = hex
+  set Cell type slave = hex
+end
+
+subsection Discretization
+  set Master degree = 2
+  set Slave degree = 3
+  set RBF radius = 0.0
+  set RBF radius factor = 1
+end
+
+subsection Solver
+  set GMRES tolerance = 1e-14
+  set GMRES reduction = 1e-08
+  set GMRES max iterations = 2000
+  set Use Schur preconditioner = true
+end
+
+subsection Run
+  set Mode = coupled
+  set Results file = /g100_work/uBS26_MatGer/dealii-internodes/reproduce/results/accuracy/galileo100/nc_p23_rbf1_k5.json
+end

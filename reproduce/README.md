@@ -61,7 +61,7 @@ itself, so typed into a login shell it runs there, not as a submitted job.
 Use `accuracy.py prepare` instead, one SLURM job per configuration — see
 "Accuracy figures on the cluster" below.
 
-`run` caches each configuration in `results/accuracy/<case>.json` (with its
+`run` caches each configuration in `results/accuracy/local/<case>.json` (with its
 `.prm` and `.log`), so an interrupted run restarts where it stopped; runs that
 fail or exceed `--timeout` are recorded and skipped on the next call
 (`--retry-failed` to retry). `--figures conforming,p1p1,p2p3,gmres,hybrid`
@@ -96,14 +96,14 @@ them against your own runs):
 
 ## Scalability figures
 
-The configuration of each test is in `test1.prm` … `test6.prm` (Table 1), with
+The configuration of each test is in `test1.prm` … `test5.prm` (Table 1), with
 the refinement levels of the paper's scaling figures (`p1r8-p1r7`, `p2r7-p4r5`,
 …). Core counts default to the paper's $48, 96, 192, 240, 288, 384, 480, 768$.
 
 `prepare` always writes a job for every `--tests`/`--cores` combination it is
 given, whether or not a result already exists under that tag -- it does not
 skip cached cases. Resubmitting a combination overwrites its existing
-`results/scalability_<tag>/test<n>_np<cores>.json` once the new job finishes,
+`results/scalability/<tag>/test<n>_np<cores>.json` once the new job finishes,
 rather than leaving the old one alone. The same holds for `accuracy.py
 prepare` below.
 
@@ -114,29 +114,31 @@ prepare` below.
 # (a leftover SLURM_CPUS_PER_TASK from an earlier salloc breaks srun).
 # --modules: the line(s) that load the compiler/MPI/libraries deal.II was built
 # with, e.g. --modules "$(grep '^module load' ~/.bashrc)".
-# --tag galileo100...: results go to results/scalability_<tag>/, the only
-# directories git does not ignore, so they can be committed ("Getting results
-# back" below).
+# --tag galileo100...: results go to results/scalability/<tag>/, which git
+# tracks, so they can be committed ("Getting results back" below); untagged
+# runs go to results/scalability/local/, which git ignores.
+# Add `export MKL_NUM_THREADS=1 OMP_NUM_THREADS=1` to --modules (one BLAS
+# thread per rank for the dense factorization of Test 5).
 
 # 1. smoke test (small and fast). Levels lowered by 3 keep every mesh
 #    non-degenerate on 96 ranks.
 python3 scalability.py prepare --tests 1,2,3,4,5 --cores 48,96 --levels-down 3 --tag galileo100-smoke \
        --account <account> --partition <partition> \
        --modules "module load <mpi> <libraries>" --time-limit 00:20:00
-bash results/scalability_galileo100-smoke/submit_all.sh
-# check results/scalability_galileo100-smoke/test{1..5}_np{48,96}.json exist and parse
+bash results/scalability/galileo100-smoke/submit_all.sh
+# check results/scalability/galileo100-smoke/test{1..5}_np{48,96}.json exist and parse
 
 # 2. the real sweep (Table 1 sizes), smallest core count first to learn the
 #    run time and memory (sacct -j <id> --format=JobID,Elapsed,MaxRSS,State)
 python3 scalability.py prepare --tests 1,2,3,4,5 --cores 48 --tag galileo100 \
        --account <account> --partition <partition> \
        --modules "module load <mpi> <libraries>" --time-limit 08:00:00
-bash results/scalability_galileo100/submit_all.sh
+bash results/scalability/galileo100/submit_all.sh
 # ... then the remaining core counts (write new scripts, resubmit):
 python3 scalability.py prepare --tests 1,2,3,4,5 --cores 96,192,240,288,384,480,768 --tag galileo100 \
        --account <account> --partition <partition> \
        --modules "module load <mpi> <libraries>" --time-limit 04:00:00
-bash results/scalability_galileo100/submit_all.sh
+bash results/scalability/galileo100/submit_all.sh
 
 # 3. once the jobs have finished: commit and push from the cluster, pull on a
 #    laptop ("Getting results back"), then plot there
@@ -158,19 +160,19 @@ time plot is normalised to 1 s at $p_0$, as in the paper. With repeated runs
 median over the repeats and the bars span min-max. `scalability_detail.py
 --tag <tag>` plots every timer separately (not for the paper).
 
-Results behind the paper's figures (all with the same code, commit 1675c73;
-each results file records its `git_version`):
+Results behind the paper's figures:
 
-| Tag (`results/scalability_<tag>/`) | Tests | Notes |
-|---|---|---|
-| `galileo100-final` | 1-4 | 5 repeats per core count |
-| `galileo100-rf50` | 5, 6 | $r_f = 50$, 5 repeats per core count |
-| `galileo100-final` (Tests 5-6) | 5, 6 | $r_f = 10$, superseded: kept for the comparison |
-| `rf_study_galileo100` (results dir) | 5, 6 | radius study $r_f = 10, 20, 50, 100$ at 768 cores |
+| Folder (`results/`) | Content |
+|---|---|
+| `scalability/galileo100/` | Tests 1-5, 8 core counts, 5 repeats each |
+| `scalability/radius_study/` | Test 5 geometry at $r_f = 10, 20, 50, 100$ on two meshes (see its README) |
+| `accuracy/galileo100/` | accuracy figures |
+| `*/local/` | laptop runs, ignored by git |
 
-Older tags (`galileo100`, `-v2` … `-v5`) are intermediate versions of the
-code, kept as a record; `galileo100` Tests 1-3 were produced by a stale
-binary and are not reproducible.
+Every results file records the commit of the code that produced it
+(`git_version`), and `plot` refuses to mix commits within a test. Earlier
+intermediate data sets (several code versions, the original Test 5) are in
+the git tag `results-history`.
 
 Tests 4 and 5 (Geometry B) use deal.II's own `GridGenerator::hyper_shell`
 (hexahedral, a full concentric shell, matching lifex's own
@@ -195,7 +197,7 @@ group needs more ranks than the rest, see below.
 python3 accuracy.py prepare --figures conforming,p1p1,p2p3,gmres --max-level 6 --np 48 \
     --tag galileo100 --account <account> --partition <partition> \
     --modules "module load <mpi> <libraries>" --time-limit 08:00:00
-bash results/accuracy_galileo100/submit_all.sh
+bash results/accuracy/galileo100/submit_all.sh
 
 # hybrid separately, at more ranks: splitting each hexahedron of the master
 # mesh into tetrahedra multiplies its cell count several times over, and at
@@ -208,7 +210,7 @@ bash results/accuracy_galileo100/submit_all.sh
 python3 accuracy.py prepare --figures hybrid --max-level 6 --np 192 \
     --tag galileo100 --account <account> --partition <partition> \
     --modules "module load <mpi> <libraries>" --time-limit 04:00:00
-bash results/accuracy_galileo100/submit_all.sh
+bash results/accuracy/galileo100/submit_all.sh
 
 # once the jobs have finished, commit and pull as in "Getting results back"
 # below, then plot on a laptop
@@ -232,7 +234,7 @@ only, with and without the preconditioner:
 python3 accuracy.py prepare --figures gmres_check --max-level 6 --np 48 \
     --tag galileo100 --account <account> --partition <partition> \
     --modules "module load <mpi> <libraries>" --time-limit 02:00:00
-bash results/accuracy_galileo100/submit_all.sh
+bash results/accuracy/galileo100/submit_all.sh
 ```
 
 Lagrange only, not RBF: an RBF stencil sized for the $p_2=3$ slave needs
@@ -241,7 +243,7 @@ unpreconditioned GMRES solve at that radius is prohibitively slow to
 actually launch -- the Lagrange rows alone already answer the question
 this check is for.
 
-The results are in `results/accuracy_galileo100/`; plot them with
+The results are in `results/accuracy/galileo100/`; plot them with
 `python accuracy.py plot --tag galileo100` (`gmres_check`'s own JSON is read
 by hand, not by `plot`).
 
@@ -257,13 +259,13 @@ which version of the code that was.
 
 ```bash
 # on the cluster, in the working repository, once the jobs have finished
-git add reproduce/results/*galileo100*
+git add reproduce/results
 git commit -m "Galileo100 results"
 git pull --rebase && git push
 
 # on the laptop
 git pull
-python scalability.py plot --tag galileo100       # in reproduce/
+python scalability.py plot --tag galileo100       # in reproduce/; figures in figures/scalability/galileo100/
 python accuracy.py plot --tag galileo100
 ```
 
@@ -280,12 +282,12 @@ used as the password, or an SSH key) and `git config user.name` /
 | `test3.prm` | 3 | A | 2 | 4 | RL-RBF | 1 |
 | `test4.prm` | 4 | B | 1 | 1 | RL-RBF | 1 |
 | `test5.prm` | 5 | B | 2 | 2 | RL-RBF | 50 |
-| `test6.prm` | 6 | B | 2 | 2 | RL-RBF | 50 |
 
-Test 6 is Test 5 refined once more on both sides (not in the original
-Table 1). Tests 5-6 use $r_f = 50$: with $r_f = 10$ (the original choice)
-the RBF transfer error saturates and the $H^1$ error converges with order
-0.5 instead of 2 (`results/rf_study_galileo100/`).
+Test 5 is one shell refinement finer than the paper's original Test 5
+(1.43e7 instead of 1.8e6 DoFs, too few per process at 768 processes) and
+uses $r_f = 50$: with $r_f = 10$ (the original choice) the RBF transfer
+error saturates and the $H^1$ error converges with order 0.5 instead of 2
+(`results/scalability/radius_study/`).
 
 They can also be run directly, `mpirun -np N ./coupled_diffusion reproduce/test1.prm`.
 Tests 1–3 reproduce the master DoF counts of Table 1 exactly ($257^3$).
