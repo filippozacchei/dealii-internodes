@@ -587,6 +587,7 @@ struct SubdomainReport
   types::global_dof_index  interface_owned_max = 0;
   unsigned int             interface_ranks     = 0;
   types::global_dof_index  phi_nnz             = 0; // 0 for Lagrange
+  std::string              phi_solver          = "-"; // strategy used ("-" for Lagrange)
 };
 
 std::string
@@ -671,7 +672,7 @@ write_results(const Parameters                                              &par
     };
     out << "  \"git_version\": \"" << INTERNODES_GIT_VERSION << "\",\n";
     out << "  \"solver_options\": {\"phi_solver\": \""
-        << env_or("INTERNODES_PHI_SOLVER", "none") << "\", \"volume_amg\": \""
+        << env_or("INTERNODES_PHI_SOLVER", "auto") << "\", \"volume_amg\": \""
         << env_or("INTERNODES_VOLUME_AMG", "ho_agg") << "\", \"schur_prec\": \""
         << env_or("INTERNODES_SCHUR_PREC", "cg") << "\"},\n";
   }
@@ -701,7 +702,8 @@ write_results(const Parameters                                              &par
           << ", \"interface_owned_min\": " << r.interface_owned_min
           << ", \"interface_owned_max\": " << r.interface_owned_max
           << ", \"interface_ranks\": " << r.interface_ranks
-          << ", \"phi_nnz\": " << r.phi_nnz << "}";
+          << ", \"phi_nnz\": " << r.phi_nnz
+          << ", \"phi_solver\": \"" << r.phi_solver << "\"}";
     }
   out << "\n  },\n";
   out << "  \"cg_statistics\": {";
@@ -1107,7 +1109,10 @@ main(int argc, char *argv[])
               Utilities::MPI::sum(owned > 0 ? 1u : 0u, mpi_comm);
             if (const auto rbf = std::dynamic_pointer_cast<InterfaceDoFHandlerRBF>(
                   sub->interface_dofHandler_ptr))
-              report.phi_nnz = rbf->phi_n_nonzero_elements();
+              {
+                report.phi_nnz    = rbf->phi_n_nonzero_elements();
+                report.phi_solver = rbf->phi_solver_used();
+              }
           }
           error_squared += report.error * report.error;
           reports.emplace_back(name, report);

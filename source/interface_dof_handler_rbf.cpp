@@ -88,7 +88,7 @@ namespace internodes
     Phi.compress(VectorOperation::insert);
 
     // Phi solve strategy (experimental, INTERNODES_PHI_SOLVER):
-    //   none      (default) CG, no preconditioner. Measured on the real
+    //   none      CG, no preconditioner. Measured on the real
     //             Test 5 matrices (8 ranks): 113 s vs 345 s (master Phi) and
     //             74 s vs 172 s (slave Phi) per solve against amg -- ML AMG
     //             does not help an RBF Gram matrix (all-positive
@@ -98,13 +98,34 @@ namespace internodes
     //   amg_sub   CG + ML AMG with the subdomain-solve settings
     //   scalapack Phi^{-1} computed once as a distributed dense matrix
     //             (ScaLAPACK Cholesky + inverse); each solve is then a
-    //             distributed dense mat-vec. Falls back to amg if deal.II
+    //             distributed dense mat-vec. Falls back to none if deal.II
     //             was built without ScaLAPACK.
     //   dense     replicated dense Cholesky (LAPACK) on every rank, for
     //             matrices up to INTERNODES_PHI_DENSE_MAX rows (default
     //             12000); falls back to amg above that.
+    //   auto      (default) scalapack if deal.II has ScaLAPACK and Phi is
+    //             at least INTERNODES_PHI_DENSE_MIN_DENSITY dense (default
+    //             0.01), else none. Dense factorization only pays off for
+    //             dense-ish Phi (large radius, e.g. Test 5: 8% / 63%); for
+    //             small radii Phi is large but very sparse (Tests 2-4:
+    //             ~0.05%, up to ~1e5 rows), where a dense factorization
+    //             would cost tens of GB and minutes against <1 s of CG.
     const char *const env_solver = std::getenv("INTERNODES_PHI_SOLVER");
-    phi_solver = env_solver ? env_solver : "none";
+    phi_solver = env_solver ? env_solver : "auto";
+    if (phi_solver == "auto")
+      {
+        const char *const env_min = std::getenv("INTERNODES_PHI_DENSE_MIN_DENSITY");
+        const double      min_density = env_min ? std::stod(env_min) : 0.01;
+        const double      phi_density =
+          double(Phi.n_nonzero_elements()) / (double(n_interface) * n_interface);
+#ifdef DEAL_II_WITH_SCALAPACK
+        phi_solver = (phi_density >= min_density) ? "scalapack" : "none";
+#else
+        (void)phi_density;
+        (void)min_density;
+        phi_solver = "none";
+#endif
+      }
     const char *const env_dense_max = std::getenv("INTERNODES_PHI_DENSE_MAX");
     const unsigned int dense_max = env_dense_max ? std::stoul(env_dense_max) : 12000;
     if (phi_solver == "dense" && n_interface > dense_max)
@@ -112,8 +133,8 @@ namespace internodes
 #ifndef DEAL_II_WITH_SCALAPACK
     if (phi_solver == "scalapack")
       {
-        pcout() << "  (deal.II has no ScaLAPACK: Phi solver falls back to amg)" << std::endl;
-        phi_solver = "amg";
+        pcout() << "  (deal.II has no ScaLAPACK: Phi solver falls back to none)" << std::endl;
+        phi_solver = "none";
       }
 #endif
     double phi_rcond = -1.;

@@ -85,6 +85,13 @@ namespace internodes
       return Phi.n_nonzero_elements();
     }
 
+    /// The Phi solve strategy actually used (after "auto" and fallbacks).
+    const std::string &
+    phi_solver_used() const
+    {
+      return phi_solver;
+    }
+
   private:
     /// Name under which this handler's Phi solves are recorded in
     /// cg_statistics() (by interface size, to tell master from slave).
