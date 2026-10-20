@@ -1,0 +1,49 @@
+=== dealii-internodes: coupled_diffusion example ===
+Parameter file: /Users/filippozacchei/COde/INTERNodes/dealii-internodes/reproduce/results/accuracy/mono_p2_k1.prm
+Mode: monolithic single-domain reference solve
+CG converged in 2 iterations.
+H1 error vs. exact solution: 1.19433
+
+
++---------------------------------------------+------------+------------+
+| Total wallclock time elapsed since start    |    0.0123s |            |
+|                                             |            |            |
+| Section                         | no. calls |  wall time | % of total |
++---------------------------------+-----------+------------+------------+
+
+
++---------------------------------------------+------------+------------+
+| Total wallclock time elapsed since start    |    0.0123s |            |
+|                                             |            |            |
+| Section                         | no. calls |  wall time | % of total |
++---------------------------------+-----------+------------+------------+
+| monolithic: assembly            |         1 |   0.00705s |        57% |
+| monolithic: solve               |         1 |   0.00275s |        22% |
++---------------------------------+-----------+------------+------------+
+
+
+
++---------------------------------------------+------------+------------+
+| Total wallclock time elapsed since start    |    0.0123s |            |
+|                                             |            |            |
+| Section                         | no. calls |  wall time | % of total |
++---------------------------------+-----------+------------+------------+
+| monolithic: assembly            |         1 |   0.00705s |        57% |
+| monolithic: solve               |         1 |   0.00275s |        22% |
++---------------------------------+-----------+------------+------------+
+
+| monolithic: assembly            |         1 |   0.00705s |        57% |
+| monolithic: solve               |         1 |   0.00275s |        22% |
++---------------------------------+-----------+------------+------------+
+
+
+
++---------------------------------------------+------------+------------+
+| Total wallclock time elapsed since start    |    0.0123s |            |
+|                                             |            |            |
+| Section                         | no. calls |  wall time | % of total |
++---------------------------------+-----------+------------+------------+
+| monolithic: assembly            |         1 |   0.00705s |        57% |
+| monolithic: solve               |         1 |   0.00275s |        22% |
++---------------------------------+-----------+------------+------------+
+

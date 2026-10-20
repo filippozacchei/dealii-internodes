@@ -1,0 +1,17 @@
+{
+  "mode": "monolithic",
+  "geometry": "adjacent_boxes",
+  "n_mpi_ranks": 4,
+  "interpolation": "lagrange",
+  "rbf_radius_factor": 0,
+  "schur_preconditioner": true,
+  "gmres_iterations": 2,
+  "broken_H1_error": 2.39800123481,
+  "subdomains": {
+    "monolithic": {"degree": 1, "n_dofs": 1377, "n_interface_dofs": 0, "n_cells": 1024, "h_avg": 0.433012701892, "rbf_radius": 0, "H1_error": 2.39800123481}
+  },
+  "timings": {
+    "monolithic: assembly": {"wall_max": 0.007716042, "calls": 1}, 
+    "monolithic: solve": {"wall_max": 0.016625709, "calls": 1}
+  }
+}

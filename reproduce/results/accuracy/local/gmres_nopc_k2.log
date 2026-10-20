@@ -1,0 +1,109 @@
+=== dealii-internodes: coupled_diffusion example ===
+Parameter file: /Users/filippozacchei/COde/INTERNodes/dealii-internodes/reproduce/results/accuracy/gmres_nopc_k2.prm
+Building master subproblem...
+Building slave subproblem...
+Coupling master and slave...
+Solving...
+Step 0: assembling system matrices
+Step 1: solving for u^(f)
+Step 2: computing interface residual chi
+Step 3: solving S*lambda = chi
+Step 4: solving for u^(lambda)
+GMRES converged in 30 iterations.
+Broken H1 error vs. exact solution: 1.18418
+
+
++-----------------------------------------------------------+------------+------------+
+| Total wallclock time elapsed since start                  |    0.0994s |            |
+|                                                           |            |            |
+| Section                                       | no. calls |  wall time | % of total |
++-----------------------------------------------+-----------+------------+------------+
+| interpolateResidual: solve M_gamma            |        31 |   0.00137s |       1.4% |
+| normal derivative                             |        62 |  0.000778s |      0.78% |
+| Setup destination points                      |         2 |  0.000698s |       0.7% |
+| Step 0: assembly (master/slave)               |         3 |    0.0632s |        64% |
+| Step 0: assembly (preconditioners)            |         1 |   0.00865s |       8.7% |
+| Step 1: u^(f) on master/slave                 |         1 |  0.000506s |      0.51% |
+| Step 2: interface residual chi                |         1 |  0.000183s |      0.18% |
+| Step 3: interface solve (total)               |         1 |    0.0147s |        15% |
+| Step 3b: solve S lambda = chi                 |         1 |    0.0147s |        15% |
+| Step 4: u^(lambda) on master/slave            |         1 |   0.00023s |      0.23% |
+| driver: solve()                               |         1 |    0.0878s |        88% |
+| setup: interface-DoFs-last renumbering        |         2 |   0.00044s |      0.44% |
+| setup: subproblem (DoFs, interface, matrices) |         2 |   0.00634s |       6.4% |
+| step_rhs: f_k - A_{k,Gamma_k} lambda_k        |        64 |  0.000415s |      0.42% |
+| subdomain linear solve                        |        64 |   0.00525s |       5.3% |
++-----------------------------------------------+-----------+------------+------------+
+
+
+
++-----------------------------------------------------------+------------+------------+
+| Total wallclock time elapsed since start                  |    0.0996s |            |
+|                                                           |            |            |
+| Section                                       | no. calls |  wall time | % of total |
++-----------------------------------------------+-----------+------------+------------+
+| interpolateResidual: solve M_gamma            |        31 |   0.00137s |       1.4% |
+| normal derivative                             |        62 |  0.000778s |      0.78% |
+| Setup destination points                      |         2 |  0.000698s |       0.7% |
+| Step 0: assembly (master/slave)               |         3 |    0.0632s |        63% |
+| Step 0: assembly (preconditioners)            |         1 |   0.00865s |       8.7% |
+| Step 1: u^(f) on master/slave                 |         1 |  0.000506s |      0.51% |
+| Step 2: interface residual chi                |         1 |  0.000183s |      0.18% |
+| Step 3: interface solve (total)               |         1 |    0.0147s |        15% |
+| Step 3b: solve S lambda = chi                 |         1 |    0.0147s |        15% |
+| Step 4: u^(lambda) on master/slave            |         1 |   0.00023s |      0.23% |
+| driver: solve()                               |         1 |    0.0878s |        88% |
+| setup: interface-DoFs-last renumbering        |         2 |   0.00044s |      0.44% |
+| setup: subproblem (DoFs, interface, matrices) |         2 |   0.00634s |       6.4% |
+| step_rhs: f_k - A_{k,Gamma_k} lambda_k        |        64 |  0.000415s |      0.42% |
+| subdomain linear solve                        |        64 |   0.00525s |       5.3% |
++-----------------------------------------------+-----------+------------+------------+
+
+
+
++-----------------------------------------------------------+------------+------------+
+| Total wallclock time elapsed since start                  |    0.0996s |            |
+|                                                           |            |            |
+| Section                                       | no. calls |  wall time | % of total |
++-----------------------------------------------+-----------+------------+------------+
+| interpolateResidual: solve M_gamma            |        31 |   0.00137s |       1.4% |
+| normal derivative                             |        62 |  0.000778s |      0.78% |
+| Setup destination points                      |         2 |  0.000698s |       0.7% |
+| Step 0: assembly (master/slave)               |         3 |    0.0632s |        63% |
+| Step 0: assembly (preconditioners)            |         1 |   0.00865s |       8.7% |
+| Step 1: u^(f) on master/slave                 |         1 |  0.000506s |      0.51% |
+| Step 2: interface residual chi                |         1 |  0.000183s |      0.18% |
+| Step 3: interface solve (total)               |         1 |    0.0147s |        15% |
+| Step 3b: solve S lambda = chi                 |         1 |    0.0147s |        15% |
+| Step 4: u^(lambda) on master/slave            |         1 |   0.00023s |      0.23% |
+| driver: solve()                               |         1 |    0.0878s |        88% |
+| setup: interface-DoFs-last renumbering        |         2 |   0.00044s |      0.44% |
+| setup: subproblem (DoFs, interface, matrices) |         2 |   0.00634s |       6.4% |
+| step_rhs: f_k - A_{k,Gamma_k} lambda_k        |        64 |  0.000415s |      0.42% |
+| subdomain linear solve                        |        64 |   0.00525s |       5.3% |
++-----------------------------------------------+-----------+------------+------------+
+
+
+
++-----------------------------------------------------------+------------+------------+
+| Total wallclock time elapsed since start                  |    0.0999s |            |
+|                                                           |            |            |
+| Section                                       | no. calls |  wall time | % of total |
++-----------------------------------------------+-----------+------------+------------+
+| interpolateResidual: solve M_gamma            |        31 |   0.00137s |       1.4% |
+| normal derivative                             |        62 |  0.000778s |      0.78% |
+| Setup destination points                      |         2 |  0.000698s |       0.7% |
+| Step 0: assembly (master/slave)               |         3 |    0.0632s |        63% |
+| Step 0: assembly (preconditioners)            |         1 |   0.00865s |       8.7% |
+| Step 1: u^(f) on master/slave                 |         1 |  0.000506s |      0.51% |
+| Step 2: interface residual chi                |         1 |  0.000183s |      0.18% |
+| Step 3: interface solve (total)               |         1 |    0.0147s |        15% |
+| Step 3b: solve S lambda = chi                 |         1 |    0.0147s |        15% |
+| Step 4: u^(lambda) on master/slave            |         1 |   0.00023s |      0.23% |
+| driver: solve()                               |         1 |    0.0878s |        88% |
+| setup: interface-DoFs-last renumbering        |         2 |   0.00044s |      0.44% |
+| setup: subproblem (DoFs, interface, matrices) |         2 |   0.00634s |       6.3% |
+| step_rhs: f_k - A_{k,Gamma_k} lambda_k        |        64 |  0.000415s |      0.42% |
+| subdomain linear solve                        |        64 |   0.00525s |       5.2% |
++-----------------------------------------------+-----------+------------+------------+
+

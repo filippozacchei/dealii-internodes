@@ -1,0 +1,121 @@
+=== dealii-internodes: coupled_diffusion example ===
+Parameter file: /Users/filippozacchei/COde/INTERNodes/dealii-internodes/reproduce/results/accuracy/conf_p1_k0.prm
+Building master subproblem...
+Building slave subproblem...
+Coupling master and slave...
+Solving...
+Step 0: assembling system matrices
+Step 1: solving for u^(f)
+Step 2: computing interface residual chi
+Step 3: solving S*lambda = chi
+Step 4: solving for u^(lambda)
+GMRES converged in 1 iterations.
+Broken H1 error vs. exact solution: 29.5787
+
+
++-----------------------------------------------------------+------------+------------+
+| Total wallclock time elapsed since start                  |    0.0111s |            |
+|                                                           |            |            |
+| Section                                       | no. calls |  wall time | % of total |
++-----------------------------------------------+-----------+------------+------------+
+
+
++-----------------------------------------------------------+------------+------------+
+| Total wallclock time elapsed since start                  |    0.0111s |            |
+|                                                           |            |            |
+| Section                                       | no. calls |  wall time | % of total |
++-----------------------------------------------+-----------+------------+------------+
+| Schur preconditioner: apply                   |         2 |  4.82e-05s |      0.43% |
+| interpolateResidual: solve M_gamma            |         2 |  5.87e-05s |      0.53% |
+| normal derivative                             |         4 |   4.5e-05s |       0.4% |
+| Assembly Preconditioner                       |         1 |   0.00135s |        12% |
+
+
++-----------------------------------------------------------+------------+------------+
+| Total wallclock time elapsed since start                  |    0.0111s |            |
+|                                                           |            |            |
+| Section                                       | no. calls |  wall time | % of total |
++-----------------------------------------------+-----------+------------+------------+
+| Schur preconditioner: apply                   |         2 |  4.82e-05s |      0.43% |
+| interpolateResidual: solve M_gamma            |         2 |  5.87e-05s |      0.53% |
+| normal derivative                             |         4 |   4.5e-05s |      0.41% |
+| Assembly Preconditioner                       |         1 |   0.00135s |        12% |
+| Setup destination points                      |         2 |  0.000104s |      0.94% |
+
+
++-----------------------------------------------------------+------------+------------+
+| Total wallclock time elapsed since start                  |    0.0111s |            |
+|                                                           |            |            |
+| Section                                       | no. calls |  wall time | % of total |
++-----------------------------------------------+-----------+------------+------------+
+| Schur preconditioner: apply                   |         2 |  4.82e-05s |      0.43% |
+| interpolateResidual: solve M_gamma            |         2 |  5.87e-05s |      0.53% |
+| normal derivative                             |         4 |   4.5e-05s |       0.4% |
+| Assembly Preconditioner                       |         1 |   0.00135s |        12% |
+| Setup destination points                      |         2 |  0.000104s |      0.94% |
+| Step 0: assembly (master/slave)               |         3 |   0.00104s |       9.4% |
+| Step 0: assembly (preconditioners)            |     | Schur preconditioner: apply                   |         2 |  4.82e-05s |      0.43% |
+| interpolateResidual: solve M_gamma            |         2 |  5.87e-05s |      0.53% |
+| normal derivative                             |         4 |   4.5e-05s |      0.41% |
+| Assembly Preconditioner                       |         1 |   0.00135s |        12% |
+| Setup destination points                      |         2 |  0.000104s |      0.94% |
+| Step 0: assembly (master/slave)               |         3 |   0.00104s |       9.4% |
+| Step 0: assembly (preconditioners)            |         1 |   0.00295s |        27% |
+| Step 1: u^(f) on master/slave                 |         1 |  0.000221s |         2% |
+| Step 2: interface residual chi                |         1 |  0.000169s |       1.5% |
+| Step 3: interface solve (total)               |         1 |   0.00191s |        17% |
+| Step 3a: initialize Schur preconditioner      |         1 |  9.86e-05s |      0.89% |
+| Step 3b: solve S lambda = chi                 |       | Setup destination points                      |         2 |  0.000104s |      0.94% |
+| Step 0: assembly (master/slave)               |         3 |   0.00104s |       9.4% |
+| Step 0: assembly (preconditioners)            |         1 |   0.00295s |        27% |
+| Step 1: u^(f) on master/slave                 |         1 |  0.000221s |         2% |
+| Step 2: interface residual chi                |         1 |  0.000169s |       1.5% |
+| Step 3: interface solve (total)               |         1 |   0.00191s |        17% |
+| Step 3a: initialize Schur preconditioner      |         1 |  9.86e-05s |      0.89% |
+| Step 3b: solve S lambda = chi                 |         1 |  0.000369s |       3.3% |
+| Step 4: u^(lambda) on master/slave            |         1 |  8.92e-05s |       0.8% |
+| driver: solve()                               |         1 |   0.00668s |        60% |
+| setup: interface-DoFs-last renumbering        |         2 |  0.000134s |       1.2% |
+| setup: subproblem (DoFs, interface, matrices) |       | Step 0: assembly (master/slave)               |         3 |   0.00104s |       9.4% |
+| Step 0: assembly (preconditioners)            |         1 |   0.00295s |        27% |
+| Step 1: u^(f) on master/slave                 |         1 |  0.000221s |         2% |
+| Step 2: interface residual chi                |         1 |  0.000169s |       1.5% |
+| Step 3: interface solve (total)               |         1 |   0.00191s |        17% |
+| Step 3a: initialize Schur preconditioner      |         1 |  9.86e-05s |      0.89% |
+| Step 3b: solve S lambda = chi                 |         1 |  0.000369s |       3.3% |
+| Step 4: u^(lambda) on master/slave            |         1 |  8.92e-05s |       0.8% |
+| driver: solve()                               |         1 |   0.00668s |        60% |
+| setup: interface-DoFs-last renumbering        |         2 |  0.000134s |       1.2% |
+| setup: subproblem (DoFs, interface, matrices) |         2 |   0.00154s |        14% |
+| step_rhs: f_k - A_{k,Gamma_k} lambda_k        |           1 |   0.00295s |        27% |
+| Step 1: u^(f) on master/slave                 |         1 |  0.000221s |         2% |
+  1 |  0.000369s |       3.3% |
+| Step 4: u^(lambda) on master/slave            |         1 |  8.92e-05s |       0.8% |
+| driver: solve()                               |         1 |   0.00668s |        60% |
+| setup: interface-DoFs-last renumbering        |         2 |  0.000134s |       1.2% |
+| Step 2: interface residual chi                |         1 |  0.000169s |       1.5% |
+| Step 3: interface solve (total)               |         1 |   0.00191s |        17% |
+| setup: subproblem (DoFs, interface, matrices) |         2 |   0.00154s |        14% |
+| step_rhs: f_k - A_{k,Gamma_k} lambda_k        |         6 |  0.000125s |       1.1% |
+  2 |   0.00154s |        14% |
+| subdomain linear solve                        |         6 |   6.8e-05s |      0.61% |
++-----------------------------------------------+-----------+------------+------------+
+
+| Step 3a: initialize Schur preconditioner      |         1 |  9.86e-05s |      0.89% |
+| Step 3b: solve S lambda = chi                 |         1 |  0.000369s |       3.3% |
+| Step 4: u^(lambda) on master/slave            |         1 |  8.92e-05s |       0.8% |
+| driver: solve()                               |         1 |   0.00668s |        60% |
+  6 |  0.000125s |       1.1% |
+| setup: interface-DoFs-last renumbering        |         2 |  0.000134s |       1.2% |
+| setup: subproblem (DoFs, interface, matrices) |         2 |   0.00154s |        14% |
+| step_rhs: f_k - A_{k,Gamma_k} lambda_k        |         6 |  0.000125s |       1.1% |
+| subdomain linear solve                        |         6 |   6.8e-05s |      0.61% |
++-----------------------------------------------+-----------+------------+------------+
+
+| subdomain linear solve                        |         6 |   6.8e-05s |      0.61% |
++-----------------------------------------------+-----------+------------+------------+
+
+| step_rhs: f_k - A_{k,Gamma_k} lambda_k        |         6 |  0.000125s |       1.1% |
+| subdomain linear solve                        |         6 |   6.8e-05s |      0.61% |
++-----------------------------------------------+-----------+------------+------------+
+

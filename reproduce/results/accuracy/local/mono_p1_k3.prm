@@ -1,0 +1,28 @@
+subsection Geometry
+  set Type = adjacent_boxes
+  set Subdivisions master = 1,1,1
+  set Subdivisions slave = 1,1,1
+  set Global refinement master = 3
+  set Global refinement slave = 3
+  set Cell type master = hex
+  set Cell type slave = hex
+end
+
+subsection Discretization
+  set Master degree = 1
+  set Slave degree = 1
+  set RBF radius = 0.0
+  set RBF radius factor = 0.0
+end
+
+subsection Solver
+  set GMRES tolerance = 1e-14
+  set GMRES reduction = 1e-08
+  set GMRES max iterations = 2000
+  set Use Schur preconditioner = true
+end
+
+subsection Run
+  set Mode = monolithic
+  set Results file = /Users/filippozacchei/COde/INTERNodes/dealii-internodes/reproduce/results/accuracy/mono_p1_k3.json
+end
