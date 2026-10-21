@@ -302,42 +302,39 @@ def interpolation_total(result):
 
 
 #: Phi solve strategies of the CPU-time figure: results/accuracy/<tag>-phi-<key>/
-#: (same cases as <tag>, run with INTERNODES_PHI_SOLVER=<key>).
+#: (same cases as <tag>, run with INTERNODES_PHI_SOLVER=<key>), with their
+#: label and bar colour (colour figure, gray figure).
 PHI_SOLVERS = (
-    ("none", "CG", "-", "o"),
-    ("scalapack", "factorization", "--", "s"),
+    ("none", "CG", style.BLUE, "0.85"),
+    ("amg", "CG + AMG", style.YELLOW, "0.55"),
+    ("scalapack", "factorization", style.ORANGE, "0.2"),
 )
 
 
-def fig_radius_cost(formats, xlabel):
-    """CPU time of the RL-RBF transfer vs the radius factor, with Phi solved
-    iteratively (CG) and by a one-time dense factorization (ScaLAPACK), one
-    curve per slave mesh size."""
+def fig_radius_cost(formats, xlabel, level=6):
+    """CPU time of the RL-RBF transfer vs the radius factor on the finest
+    p2/p3 mesh (h_2 = 1/2^(level-1)), with Phi solved by CG, by CG + AMG and
+    by a one-time dense factorization (ScaLAPACK): bars, as in the paper."""
     dirs = {key: RESULTS.parent / f"{RESULTS.name}-phi-{key}" for key, *_ in PHI_SOLVERS}
     if not all(d.exists() for d in dirs.values()):
         return print(f"  RBF_radius_vs_time_hslave: needs {', '.join(str(d) for d in dirs.values())}, skipped")
-    # The coarser levels take well under a second with either solver (setup
-    # noise of single runs dominates), so only the two finest are shown.
-    levels = (5, 6)
+    width = 0.26
     for gray in (False, True):
         fig, ax = style.new_axes()
-        colors = ("0.55", "0.0") if gray else (style.BLUE, style.ORANGE)
-        for k, color in zip(levels, colors):
-            for key, label, linestyle, marker in PHI_SOLVERS:
-                rf, cost = [], []
-                for f in RADIUS_FACTORS:
-                    path = dirs[key] / f"nc_p23_rbf{f}_k{k}.json"
-                    if path.exists():
-                        rf.append(f)
-                        cost.append(interpolation_total(json.loads(path.read_text())))
-                ax.loglog(rf, cost, label=f"$h_2=1/{2 ** (k - 1)}$, {label}",
-                          **style.style_series(color=color, marker=marker, linestyle=linestyle))
-        ax.set_xticks(RADIUS_FACTORS, [str(f) for f in RADIUS_FACTORS])
-        ax.xaxis.set_minor_locator(mpl_null())
-        ax.set_xlabel(r"radius factor $r_f$")
+        for j, (key, label, color, gray_color) in enumerate(PHI_SOLVERS):
+            heights = []
+            for f in RADIUS_FACTORS:
+                path = dirs[key] / f"nc_p23_rbf{f}_k{level}.json"
+                heights.append(interpolation_total(json.loads(path.read_text())) if path.exists() else np.nan)
+            ax.bar(np.arange(len(RADIUS_FACTORS)) + (j - 1) * width, heights, width,
+                   color=gray_color if gray else color, edgecolor="black", linewidth=0.8, label=label, zorder=3)
+        ax.set_yscale("log")
+        ax.set_xticks(range(len(RADIUS_FACTORS)), [f"$r_f={f}$" for f in RADIUS_FACTORS])
         ax.set_ylabel("CPU time (s)")
+        ax.set_ylim(0.1, 1e4)
         style.grid(ax, log_y=True)
-        ax.legend(loc="upper left", fontsize=8.5)
+        ax.grid(False, axis="x")
+        ax.legend(loc="upper left")
         style.save(fig, "RBF_radius_vs_time_hslave_gray" if gray else "RBF_radius_vs_time_hslave", FIGURES, formats)
 
 
