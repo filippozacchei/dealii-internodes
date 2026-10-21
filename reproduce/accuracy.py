@@ -291,47 +291,60 @@ def interpolation_cost(result):
     return sum(t.get(s, {}).get("wall_max", 0.0) for s in sections)
 
 
+def interpolation_total(result):
+    """Whole cost of the RBF transfer operators: the one-time setup (Phi
+    assembly and, depending on the solver, its factorization or AMG setup,
+    plus the scaling solve and the destination points) and every
+    interpolation / normal-derivative evaluation of the run."""
+    t = result["timings"]
+    setup = ("setup: RBF operators (Phi, AMG, scaling)", "Setup destination points")
+    return interpolation_cost(result) + sum(t.get(s, {}).get("wall_max", 0.0) for s in setup)
+
+
+#: Phi solve strategies of the CPU-time figure: results/accuracy/<tag>-phi-<key>/
+#: (same cases as <tag>, run with INTERNODES_PHI_SOLVER=<key>).
+PHI_SOLVERS = (
+    ("none", "CG", "-", "o"),
+    ("scalapack", "factorization", "--", "s"),
+)
+
+
 def fig_radius_cost(formats, xlabel):
-    levels = [k for k in range(2, 7) if load(f"nc_p23_rbf1_k{k}")]
-    if not levels:
-        return print("  RBF_radius_vs_time_hslave: no results, skipped")
-    width = 0.2
-    cost = {
-        rf: [
-            interpolation_cost(load(f"nc_p23_rbf{rf}_k{k}")) if load(f"nc_p23_rbf{rf}_k{k}") else np.nan
-            for k in levels
-        ]
-        for rf in RADIUS_FACTORS
-    }
-    positive = np.array([c for row in cost.values() for c in row if c > 0])
-    if not len(positive):
-        return print("  RBF_radius_vs_time_hslave: no timings, skipped")
-    # y range: whole decades around the data (the paper's is 0.1 s ... 1e4 s)
-    ylim = (10 ** np.floor(np.log10(positive.min())), 10 ** np.ceil(np.log10(positive.max() * 3)))
+    """CPU time of the RL-RBF transfer vs the radius factor, with Phi solved
+    iteratively (CG) and by a one-time dense factorization (ScaLAPACK), one
+    curve per slave mesh size."""
+    dirs = {key: RESULTS.parent / f"{RESULTS.name}-phi-{key}" for key, *_ in PHI_SOLVERS}
+    if not all(d.exists() for d in dirs.values()):
+        return print(f"  RBF_radius_vs_time_hslave: needs {', '.join(str(d) for d in dirs.values())}, skipped")
+    # The coarser levels take well under a second with either solver (setup
+    # noise of single runs dominates), so only the two finest are shown.
+    levels = (5, 6)
     for gray in (False, True):
         fig, ax = style.new_axes()
-        for j, rf in enumerate(RADIUS_FACTORS):
-            heights = cost[rf]
-            color = ("0.25", "0.5", "0.75", "1.0")[j] if gray else (style.BLUE, style.YELLOW, style.GREEN, style.ORANGE)[j]
-            ax.bar(
-                np.arange(len(levels)) + (j - 1.5) * width,
-                heights,
-                width,
-                color=color,
-                edgecolor="black",
-                linewidth=0.8,
-                label=f"$r_f={rf}$",
-                zorder=3,
-            )
-        ax.set_yscale("log")
-        ax.set_xticks(range(len(levels)), [f"1/{2 ** (k - 1)}" for k in levels])
-        ax.set_xlabel(xlabel)
+        colors = ("0.55", "0.0") if gray else (style.BLUE, style.ORANGE)
+        for k, color in zip(levels, colors):
+            for key, label, linestyle, marker in PHI_SOLVERS:
+                rf, cost = [], []
+                for f in RADIUS_FACTORS:
+                    path = dirs[key] / f"nc_p23_rbf{f}_k{k}.json"
+                    if path.exists():
+                        rf.append(f)
+                        cost.append(interpolation_total(json.loads(path.read_text())))
+                ax.loglog(rf, cost, label=f"$h_2=1/{2 ** (k - 1)}$, {label}",
+                          **style.style_series(color=color, marker=marker, linestyle=linestyle))
+        ax.set_xticks(RADIUS_FACTORS, [str(f) for f in RADIUS_FACTORS])
+        ax.xaxis.set_minor_locator(mpl_null())
+        ax.set_xlabel(r"radius factor $r_f$")
         ax.set_ylabel("CPU time (s)")
-        ax.set_ylim(*ylim)
         style.grid(ax, log_y=True)
-        ax.grid(False, axis="x")
-        ax.legend(loc="upper left")
+        ax.legend(loc="upper left", fontsize=8.5)
         style.save(fig, "RBF_radius_vs_time_hslave_gray" if gray else "RBF_radius_vs_time_hslave", FIGURES, formats)
+
+
+def mpl_null():
+    from matplotlib.ticker import NullLocator
+
+    return NullLocator()
 
 
 def fig_gmres(formats):
