@@ -263,11 +263,16 @@ def plot_test(n, formats, tag=None):
         if kind == "scalability":
             ax.set_ylabel(r"$T(p_0)/T(p)$")
             ax.set_ylim(1, 1.15 * cores[-1] / p0)
-            ax.legend(loc="upper left")
+            ax.legend(loc="best")
             out = f"{name}_scalability{suffix}"
         else:
             ax.set_ylabel("Time (s)")
-            ax.legend(loc="lower left")
+            # The curves fall from left to right, so the upper right is free
+            # once the axis gets ~1.5 decades of headroom: the legend goes
+            # there, in two columns, instead of over the data.
+            lo, hi = ax.get_ylim()
+            ax.set_ylim(lo, hi * 30)
+            ax.legend(loc="upper right", ncol=2, columnspacing=1.0)
             out = f"{name}_total{suffix}"
         style.save(fig, out, _figures_dir(tag), formats)
 
