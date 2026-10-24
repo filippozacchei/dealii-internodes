@@ -96,7 +96,7 @@ def _look():
         "Step 2": dict(color=style.ORANGE, marker="^", linestyle=":"),
         "Step 3": dict(color=style.GREEN, marker="s", linestyle="-."),
         "Step 4": dict(color=style.PURPLE, marker="D", linestyle="--"),
-        "Total": dict(color=style.GRAY, marker="*", linestyle="-", linewidth=2.2),
+        "Total": dict(color=style.GRAY, marker="*", linestyle="-", linewidth=1.8),
     }
 
 
@@ -232,6 +232,11 @@ def plot_test(n, formats, tag=None):
 
     for kind in ("scalability", "total"):
         fig, ax = style.new_axes(style.SCALABILITY_FIGSIZE)
+        # sizes of the paper's original (MATLAB) scalability figures: small
+        # legend, thin lines, small markers
+        mpl_rc_update({"legend.fontsize": 8.5, "axes.labelsize": 10, "lines.linewidth": 1.2,
+                       "lines.markersize": 4.0, "lines.markeredgewidth": 1.0})
+        ax.tick_params(labelsize=9)
         ideal = cores / p0 if kind == "scalability" else p0 / cores
         ax.loglog(cores, ideal, label="Ideal", **LOOK["Ideal"])
         for label in SERIES:
@@ -265,6 +270,12 @@ def plot_test(n, formats, tag=None):
             ax.legend(loc="lower left")
             out = f"{name}_total{suffix}"
         style.save(fig, out, _figures_dir(tag), formats)
+
+
+def mpl_rc_update(values):
+    import matplotlib as mpl
+
+    mpl.rcParams.update(values)
 
 
 def mpl_null():

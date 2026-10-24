@@ -24,8 +24,9 @@ GRAY = "#8c8c8c"
 #: Size of the accuracy figures (inches): the EPS bounding boxes of the paper
 #: are 334 x ~250 pt.
 ACCURACY_FIGSIZE = (334 / 72.0, 250 / 72.0)
-#: Size of the scalability figures: the PNGs of the paper are 700 x 525 px.
-SCALABILITY_FIGSIZE = (7.0, 5.25)
+#: Size of the scalability figures: the PNGs of the paper are 709 x 531 px at
+#: 150 dpi (4.7 x 3.5 in), so that text has the same size once included.
+SCALABILITY_FIGSIZE = (709 / 150.0, 531 / 150.0)
 
 
 def setup():
